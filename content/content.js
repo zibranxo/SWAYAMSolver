@@ -33,7 +33,7 @@
 
   initAntiDetectionShield();
 
-  // --- 2. DEEP DOM QUERY (SHADOW DOM PIERCING) ---
+  // --- 2. DEEP DOM QUERY (SHADOW DOM PIERCING & SAME-ORIGIN IFRAMES) ---
   function deepQuerySelectorAll(selector, root = document) {
     let results = [];
     try {
@@ -44,6 +44,14 @@
       for (const el of allElements) {
         if (el.shadowRoot) {
           results = results.concat(deepQuerySelectorAll(selector, el.shadowRoot));
+        }
+        if (el.tagName && el.tagName.toLowerCase() === 'iframe') {
+          try {
+            const iframeDoc = el.contentDocument || (el.contentWindow && el.contentWindow.document);
+            if (iframeDoc) {
+              results = results.concat(deepQuerySelectorAll(selector, iframeDoc));
+            }
+          } catch (e) {}
         }
       }
     } catch (e) {}
@@ -202,16 +210,22 @@
     return cleanText(clone.innerText || clone.textContent || '');
   }
 
-  // --- 5. UNIVERSAL QUESTION EXTRACTOR ---
-  async function extractQuestions(includeImages = false) {
+  // --- 5. UNIVERSAL INPUT-CENTRIC QUESTION EXTRACTOR ---
+  async function extractQuestions(includeImages = false, root = document) {
     const questions = [];
 
-    // Selectors covering Google Course Builder, Canvas, Swayam 2.0, Moodle, and standard LMS structures
+    // 1. Find all choice inputs across root, shadow DOM, and same-origin frames
+    const inputSelector = 'input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button, mat-checkbox';
+    const allInputs = deepQuerySelectorAll(inputSelector, root);
+
+    if (allInputs.length === 0) {
+      return questions;
+    }
+
+    // 2. Check for explicit question containers
     const containerSelectors = [
       '.gcb-question',
-      '.qt-question',
       'fieldset.gcb-question-fieldset',
-      'div[id^="qt-"]',
       '.assessment-question',
       '.quiz-question-container',
       '.quiz_question',
@@ -220,58 +234,93 @@
       '.qt-mc-question',
       '.qt-sa-question',
       '.quiz-question',
-      '[class*="question-container"]',
-      '[class*="QuestionContainer"]',
       'div[class*="question-row"]',
       'mat-card.question-card',
-      '.question'
+      'fieldset.question-fieldset',
+      '.form-group.question'
     ].join(', ');
 
-    let qContainers = deepQuerySelectorAll(containerSelectors);
+    let rawContainers = deepQuerySelectorAll(containerSelectors, root);
 
-    // Keep leaf/innermost question containers and discard ancestor wrappers
-    qContainers = qContainers.filter(container => {
-      return !qContainers.some(other => other !== container && container.contains(other));
+    // Keep only containers that DIRECTLY contain choice inputs
+    rawContainers = rawContainers.filter(container => {
+      const inputsInContainer = deepQuerySelectorAll(inputSelector, container);
+      return inputsInContainer.length > 0;
     });
 
-    // Fallback: Group by radio/checkbox inputs if no standard containers matched
-    if (qContainers.length === 0) {
-      const inputs = deepQuerySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button');
-      const groups = new Map();
+    // Remove outer wrappers if smaller child containers also match
+    rawContainers = rawContainers.filter(container => {
+      return !rawContainers.some(other => other !== container && container.contains(other));
+    });
 
-      inputs.forEach(input => {
-        const name = input.name || input.getAttribute('name') || '';
-        if (name) {
-          if (!groups.has(name)) groups.set(name, []);
-          groups.get(name).push(input);
-        } else {
-          const parent = input.closest('fieldset, .mat-radio-group, .form-group, .card, tr, li, div[class*="question"], div[class*="row"]') || input.parentElement;
-          if (parent) {
-            if (!groups.has(parent)) groups.set(parent, []);
-            groups.get(parent).push(input);
-          }
-        }
-      });
-
-      groups.forEach((inputList) => {
-        if (inputList.length >= 2) {
-          const commonWrapper = inputList[0].closest('fieldset, .card, .form-group, tr, div') || inputList[0].parentElement;
-          if (commonWrapper && !qContainers.includes(commonWrapper)) {
-            qContainers.push(commonWrapper);
-          }
+    let questionGroups = [];
+    if (rawContainers.length > 0) {
+      rawContainers.forEach((container, idx) => {
+        const inputs = deepQuerySelectorAll(inputSelector, container);
+        if (inputs.length > 0) {
+          questionGroups.push({
+            container: container,
+            inputs: inputs,
+            id: container.id || `q_${idx + 1}`
+          });
         }
       });
     }
 
-    // Process each container into structured questions
-    for (let index = 0; index < qContainers.length; index++) {
-      const container = qContainers[index];
-      const qId = container.id || container.getAttribute('name') || `q_${index + 1}`;
-      const inputs = deepQuerySelectorAll(
-        'input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button',
-        container
-      );
-      if (inputs.length === 0) continue;
+    // 3. Fallback: Group by input name or distinct question wrapper
+    if (questionGroups.length === 0) {
+      const nameGroups = new Map();
+      const unnamedInputs = [];
+
+      allInputs.forEach(input => {
+        const name = input.name || input.getAttribute('name') || '';
+        if (name) {
+          if (!nameGroups.has(name)) nameGroups.set(name, []);
+          nameGroups.get(name).push(input);
+        } else {
+          unnamedInputs.push(input);
+        }
+      });
+
+      nameGroups.forEach((inputs, name) => {
+        if (inputs.length > 0) {
+          let container = inputs[0].closest('.gcb-question, fieldset, .mat-radio-group, [role="radiogroup"], .card, .form-group, tr, li, div[class*="question"], div') || inputs[0].parentElement;
+          questionGroups.push({
+            container: container,
+            inputs: inputs,
+            id: name
+          });
+        }
+      });
+
+      if (unnamedInputs.length > 0) {
+        const parentMap = new Map();
+        unnamedInputs.forEach(input => {
+          const parent = input.closest('fieldset, [role="radiogroup"], .mat-radio-group, .choice-group, tr, div[class*="question"], .form-group') || input.parentElement?.parentElement || input.parentElement;
+          if (parent) {
+            if (!parentMap.has(parent)) parentMap.set(parent, []);
+            parentMap.get(parent).push(input);
+          }
+        });
+
+        parentMap.forEach((inputs, parent) => {
+          if (inputs.length >= 1) {
+            questionGroups.push({
+              container: parent,
+              inputs: inputs,
+              id: parent.id || `q_unnamed_${questionGroups.length + 1}`
+            });
+          }
+        });
+      }
+    }
+
+    // 4. Build structured questions from questionGroups
+    for (let index = 0; index < questionGroups.length; index++) {
+      const group = questionGroups[index];
+      const container = group.container;
+      const inputs = group.inputs;
+      const qId = group.id || `q_${index + 1}`;
 
       const isCheckbox = inputs.some(i => i.type === 'checkbox' || i.getAttribute('role') === 'checkbox' || (i.tagName && i.tagName.toLowerCase().includes('checkbox')));
       const qType = isCheckbox ? 'msq' : 'mcq';
@@ -283,10 +332,10 @@
         let labelEl = null;
 
         if (input.id) {
-          labelEl = deepQuerySelector(`label[for="${CSS.escape(input.id)}"]`) || container.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+          labelEl = deepQuerySelector(`label[for="${CSS.escape(input.id)}"]`, container.ownerDocument || document) || container.querySelector(`label[for="${CSS.escape(input.id)}"]`);
         }
         if (!labelEl) {
-          labelEl = input.closest('label, .mat-radio-label, .choice, li, tr, .option');
+          labelEl = input.closest('label, .mat-radio-label, .choice, li, tr, .option, .mat-checkbox-layout');
         }
         if (!labelEl && input.nextElementSibling) {
           labelEl = input.nextElementSibling;
@@ -311,7 +360,7 @@
 
       let qText = '';
       const bodyEl = container.querySelector(
-        '.qt-question-body, .qt-question-description, .question-text, .question-title, .question_text, legend, .gcb-question-header, h2, h3, h4, strong, p'
+        '.qt-question-body, .qt-question-description, .question-text, .question-title, .question_text, legend, .gcb-question-header, h2, h3, h4, p, span.question-title, div.prompt'
       );
       if (bodyEl) {
         qText = extractRichText(bodyEl);
@@ -352,10 +401,8 @@
         if (chrome.runtime.lastError) {}
       });
 
-      // If this frame has questions, initialize in-page widget
-      if (questions.length > 0) {
-        initFloatingWidget();
-      }
+      // Always initialize floating widget so user can trigger solve from any frame
+      initFloatingWidget();
     } catch (e) {}
   }
 
@@ -538,11 +585,25 @@
 
     try {
       const questions = await extractQuestions(true);
+
+      // If this frame has 0 questions, delegate solve across frames in the active tab!
       if (questions.length === 0) {
+        const delegateRes = await new Promise(resolve => {
+          chrome.runtime.sendMessage({ action: 'GET_TAB_STATUS_AND_SOLVE' }, res => {
+            if (chrome.runtime.lastError) resolve(null);
+            else resolve(res);
+          });
+        });
+
+        if (delegateRes && delegateRes.success && delegateRes.solved) {
+          showToast(`Solved ${delegateRes.count || ''} questions in assessment frame.`, 'success');
+          updateWidgetState('idle');
+          return;
+        }
+
         if (userInitiated) {
-          throw new Error('No questions found on this page or iframe.');
+          throw new Error('No questions found on the active page.');
         } else {
-          // Silent return for multi-frame broadcasts on frames without questions
           updateWidgetState('idle');
           return;
         }

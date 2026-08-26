@@ -104,11 +104,11 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (request.action === 'GET_TAB_STATUS') {
-      const tabId = request.tabId;
+      const tabId = request.tabId || (sender.tab ? sender.tab.id : null);
       let totalCount = 0;
       let targetFrameIds = [];
 
-      if (tabFramesMap.has(tabId)) {
+      if (tabId && tabFramesMap.has(tabId)) {
         tabFramesMap.get(tabId).forEach((frameData, frameId) => {
           if (frameData.count > 0) {
             totalCount += frameData.count;
@@ -123,6 +123,49 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
         targetFrameIds: targetFrameIds
       });
       return false;
+    }
+
+    if (request.action === 'GET_TAB_STATUS_AND_SOLVE' && sender.tab) {
+      const tabId = sender.tab.id;
+      const callerFrameId = sender.frameId || 0;
+      const frames = tabFramesMap.get(tabId);
+      const targetFrames = [];
+
+      if (frames) {
+        frames.forEach((f, frameId) => {
+          if (frameId !== callerFrameId && f.count > 0) {
+            targetFrames.push({ frameId, count: f.count });
+          }
+        });
+      }
+
+      if (targetFrames.length > 0) {
+        let totalCount = 0;
+        const solvePromises = targetFrames.map(t => {
+          totalCount += t.count;
+          return new Promise(resolve => {
+            chrome.tabs.sendMessage(tabId, { action: 'TRIGGER_SOLVE' }, { frameId: t.frameId }, (res) => {
+              if (chrome.runtime.lastError) resolve(false);
+              else resolve(res?.success || true);
+            });
+          });
+        });
+
+        Promise.all(solvePromises).then(() => {
+          sendResponse({ success: true, solved: true, count: totalCount });
+        });
+        return true;
+      } else {
+        // Broadcast TRIGGER_SOLVE to all child frames
+        chrome.tabs.sendMessage(tabId, { action: 'TRIGGER_SOLVE' }, (res) => {
+          if (chrome.runtime.lastError) {
+            sendResponse({ success: false, solved: false });
+          } else {
+            sendResponse({ success: true, solved: res?.success || false });
+          }
+        });
+        return true;
+      }
     }
 
     if (request.action === 'TRIGGER_SOLVE_TAB') {
