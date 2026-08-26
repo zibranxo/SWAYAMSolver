@@ -52,6 +52,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const testConnBtn = document.getElementById('test-connection-btn');
   const testResultBadge = document.getElementById('test-result-badge');
 
+  // Stealth & Safety Toggles
+  const humanPacingToggle = document.getElementById('human-pacing-toggle');
+  const stealthModeToggle = document.getElementById('stealth-mode-toggle');
+  const autoScrollToggle = document.getElementById('auto-scroll-toggle');
+  const bypassRestrictionsToggle = document.getElementById('bypass-restrictions-toggle');
+
+  // Automation Toggles
   const autoSelectToggle = document.getElementById('auto-select-toggle');
   const highlightOnlyToggle = document.getElementById('highlight-only-toggle');
   const showReasoningToggle = document.getElementById('show-reasoning-toggle');
@@ -75,11 +82,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   apiKeyInput.value = config.apiKey || '';
   modelNameInput.value = config.model || PRESETS.groq.model;
 
+  humanPacingToggle.checked = config.humanPacing !== false;
+  stealthModeToggle.checked = config.stealthMode === true;
+  autoScrollToggle.checked = config.autoScroll !== false;
+  bypassRestrictionsToggle.checked = config.bypassRestrictions !== false;
+
   autoSelectToggle.checked = config.autoSelect !== false;
   highlightOnlyToggle.checked = config.highlightOnly === true;
   showReasoningToggle.checked = config.showReasoning !== false;
   autoSubmitToggle.checked = config.autoSubmit === true;
-  submitDelayInput.value = Math.round((config.autoSubmitDelay || 3000) / 1000);
+  submitDelayInput.value = Math.round((config.autoSubmitDelay || 5000) / 1000);
   if (config.customPrompt) customPromptInput.value = config.customPrompt;
 
   submitDelayGroup.style.display = autoSubmitToggle.checked ? 'flex' : 'none';
@@ -125,11 +137,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       baseUrl: baseUrlInput.value.trim(),
       apiKey: apiKeyInput.value.trim(),
       model: modelNameInput.value.trim(),
+      humanPacing: humanPacingToggle.checked,
+      stealthMode: stealthModeToggle.checked,
+      autoScroll: autoScrollToggle.checked,
+      bypassRestrictions: bypassRestrictionsToggle.checked,
       autoSelect: autoSelectToggle.checked,
       highlightOnly: highlightOnlyToggle.checked,
       showReasoning: showReasoningToggle.checked,
       autoSubmit: autoSubmitToggle.checked,
-      autoSubmitDelay: (parseInt(submitDelayInput.value, 10) || 3) * 1000,
+      autoSubmitDelay: (parseInt(submitDelayInput.value, 10) || 5) * 1000,
       customPrompt: customPromptInput.value.trim()
     };
 

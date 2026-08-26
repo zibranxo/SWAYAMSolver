@@ -7,11 +7,12 @@ A browser extension that extracts questions from SWAYAM and NPTEL assignment pag
 ## Features
 
 - **OpenAI-compatible API support**: Works with Groq, OpenAI, OpenRouter, DeepSeek, and local Ollama instances.
-- **Background API proxy**: Requests are routed through the extension's Manifest V3 background service worker, avoiding webpage Content Security Policy (CSP) and CORS restrictions.
+- **Background API proxy**: All LLM requests are executed from the Manifest V3 background service worker. The host webpage never sees outgoing network requests to external AI APIs.
+- **Closed Shadow DOM**: The in-page toolbar is mounted inside a closed Shadow Root (`mode: 'closed'`), preventing LMS scripts and anti-cheat observers from discovering extension DOM elements.
+- **Human Pacing & Pointer Simulation**: Dispatches authentic pointer event sequences (`pointerdown`, `mousedown`, `focus`, `mouseup`, `click`, `change`) with randomized non-zero coordinate offsets and natural delays (1.2s - 3.2s) between questions.
+- **Stealth Mode**: Optional mode that selects inputs directly without injecting any visual classes, outlines, or badges into the webpage DOM.
+- **Anti-Detection Shield**: Neutralizes restrictive webpage handlers that attempt to block text selection, copy-paste, and right-click.
 - **Dynamic DOM parser**: Handles multiple-choice (MCQ) and multiple-select (MSQ) questions across Google Course Builder, Swayam 2.0, and Canvas layouts while preserving LaTeX/MathJax formulas and code blocks.
-- **Event dispatching**: Dispatches standard browser pointer and form events so reactive frameworks (React, Angular, Polymer) register selection changes correctly.
-- **In-page controls**: A minimal draggable toolbar on assignment pages with options to solve, clear selections, or minimize.
-- **Explanations and confidence ratings**: Injects subtle answer indicators and tooltips with confidence scores and reasoning.
 
 ---
 
@@ -40,17 +41,22 @@ Click the extension icon in your browser toolbar to open the settings popup and 
 | **Local Ollama** | `http://localhost:11434/v1` | `llama3.1:latest` | Run locally with `OLLAMA_ORIGINS="*" ollama run llama3.1` |
 | **Custom** | User defined | User defined | Any endpoint supporting `/v1/chat/completions` |
 
-After configuring your credentials, click **Test Connection** to verify endpoint availability.
+### Safety & Anti-Detection Settings
+
+- **Human Pacing**: Adds random 1.2s to 3.2s intervals per question to simulate natural reading and answering speed.
+- **Stealth Mode**: When enabled, selects inputs silently without adding any badges or classes to the page DOM.
+- **Auto-Scroll**: Smoothly scrolls each question into the center of the viewport as it is being solved.
+- **Bypass Restrictions**: Prevents assignment scripts from blocking copy, paste, or right-clicking.
 
 ---
 
 ## Usage
 
 1. Open any graded assignment or quiz on the SWAYAM / NPTEL portal.
-2. Click **Solve** on the floating in-page toolbar or click **Solve Current Assignment** from the extension popup.
+2. Click **Solve** on the in-page toolbar or click **Solve Current Assignment** from the extension popup.
 3. You can also use the keyboard shortcut `Alt+S` to trigger solving.
 4. The extension extracts question text and options, queries your configured model, and selects the corresponding radio buttons or checkboxes.
-5. Hover over the injected `Answer` badge on any question to inspect the reasoning and confidence percentage.
+5. In standard mode, hover over the `Answer` badge on any question to inspect the reasoning and confidence percentage.
 
 ---
 
@@ -81,14 +87,14 @@ SWAYAMSolver/
 │   ├── icon48.png
 │   └── icon128.png
 ├── background/
-│   └── background.js          # Background service worker (API caller)
+│   └── background.js          # Background service worker (API proxy)
 ├── content/
-│   ├── content.js             # Content script (DOM scraper, injector, toolbar)
-│   └── content.css            # Styles for in-page controls and tooltips
+│   ├── content.js             # Content script (Shadow DOM, human pacing, anti-detection)
+│   └── content.css            # Stylesheet for fallback styles
 ├── popup/
 │   ├── popup.html             # Extension settings modal
 │   ├── popup.js               # Settings controller and connection test
-│   └── popup.css              # Popup styling
+│   └── popup.css              # Minimalist popup styling
 ├── test/
 │   ├── mock_assignment.html   # Local test assignment page
 │   ├── unit_tests.js          # Unit tests

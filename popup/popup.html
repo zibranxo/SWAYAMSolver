@@ -78,9 +78,59 @@
       </div>
     </section>
 
-    <!-- Options & Preferences -->
+    <!-- Stealth & Safety Settings -->
+    <details class="options-accordion" open>
+      <summary class="accordion-summary">Safety & Anti-Detection</summary>
+      <div class="accordion-body">
+        <div class="switch-row">
+          <div class="switch-label">
+            <span>Human pacing</span>
+            <small>Random 1.2s-3.2s delay between questions</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="human-pacing-toggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="switch-row">
+          <div class="switch-label">
+            <span>Stealth mode</span>
+            <small>Zero DOM footprint (no in-page badges or classes)</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="stealth-mode-toggle">
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="switch-row">
+          <div class="switch-label">
+            <span>Auto-scroll</span>
+            <small>Smooth scroll to each question while solving</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="auto-scroll-toggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+
+        <div class="switch-row">
+          <div class="switch-label">
+            <span>Bypass page restrictions</span>
+            <small>Unblock copy, right-click, and text selection</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="bypass-restrictions-toggle" checked>
+            <span class="slider"></span>
+          </label>
+        </div>
+      </div>
+    </details>
+
+    <!-- General Automation Preferences -->
     <details class="options-accordion">
-      <summary class="accordion-summary">Preferences & Automation</summary>
+      <summary class="accordion-summary">Automation Preferences</summary>
       <div class="accordion-body">
         <div class="switch-row">
           <div class="switch-label">
@@ -128,7 +178,7 @@
 
         <div class="field" id="submit-delay-group" style="display: none;">
           <label for="submit-delay">Submission delay (seconds)</label>
-          <input type="number" id="submit-delay" class="input" min="1" max="30" value="3">
+          <input type="number" id="submit-delay" class="input" min="1" max="60" value="5">
         </div>
 
         <div class="field">

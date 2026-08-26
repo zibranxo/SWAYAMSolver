@@ -11,8 +11,14 @@ const DEFAULT_CONFIG = {
   temperature: 0.1,
   autoSelect: true,
   highlightOnly: false,
+  stealthMode: false,
+  humanPacing: true,
+  minDelay: 1200,
+  maxDelay: 3200,
+  autoScroll: true,
+  bypassRestrictions: true,
   autoSubmit: false,
-  autoSubmitDelay: 3000,
+  autoSubmitDelay: 5000,
   showReasoning: true,
   customPrompt: `You are an academic subject matter expert solving multiple choice questions (MCQs) and multiple select questions (MSQs) from the SWAYAM / NPTEL portal.
 Analyze each question step-by-step with domain precision.
