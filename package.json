@@ -1,22 +1,37 @@
 {
-  "name": "swayam-solver",
+  "name": "@zibranxo/swayam-solver",
   "version": "2.0.0",
-  "description": "Autonomous AI solver for SWAYAM & NPTEL MCQ/MSQ assignments using any OpenAI-compatible LLM.",
+  "description": "Automated helper for SWAYAM and NPTEL multiple choice assignments.",
   "main": "background/background.js",
   "scripts": {
     "test": "node test/unit_tests.js && node test/dom_e2e_test.js",
-    "lint": "node -c background/background.js content/content.js popup/popup.js test/unit_tests.js test/dom_e2e_test.js"
+    "lint": "node -c background/background.js content/content.js popup/popup.js test/unit_tests.js test/dom_e2e_test.js",
+    "build:zip": "node -e \"const fs = require('fs'); const cp = require('child_process'); try { fs.unlinkSync('swayam-solver.zip'); } catch(e){} cp.execSync('tar -a -c -f swayam-solver.zip manifest.json package.json background content popup icons'); console.log('Bundle created: swayam-solver.zip');\""
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zibranxo/SWAYAMSolver.git"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "files": [
+    "manifest.json",
+    "background",
+    "content",
+    "popup",
+    "icons"
+  ],
   "keywords": [
     "swayam",
     "nptel",
     "chrome-extension",
-    "llm",
-    "openai",
-    "groq",
-    "deepseek",
-    "mcq-solver"
+    "browser-extension"
   ],
-  "author": "",
-  "license": "MIT"
+  "author": "zibranxo",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/zibranxo/SWAYAMSolver/issues"
+  },
+  "homepage": "https://github.com/zibranxo/SWAYAMSolver#readme"
 }

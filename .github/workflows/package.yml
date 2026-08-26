@@ -1,0 +1,59 @@
+name: Build & Publish Package
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://npm.pkg.github.com'
+          scope: '@zibranxo'
+
+      - name: Run test suite & linter
+        run: |
+          npm test
+          npm run lint
+
+      - name: Build extension zip bundle
+        run: |
+          zip -r swayam-solver-v2.0.0.zip manifest.json package.json background/ content/ popup/ icons/ README.md
+
+      - name: Publish to GitHub Packages (npm registry)
+        run: |
+          npm publish || echo "Package version already published or requires new version tag."
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload zip artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: swayam-solver-extension
+          path: swayam-solver-v2.0.0.zip
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: swayam-solver-v2.0.0.zip
+          name: SWAYAM Solver ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
