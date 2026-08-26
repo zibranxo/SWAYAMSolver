@@ -1,6 +1,7 @@
 /**
  * SWAYAM Solver - Universal DOM Scraper & Content Engine
- * Supports iframes, Shadow DOM piercing, Google Course Builder, Canvas, and Swayam 2.0.
+ * Supports iframes, Shadow DOM piercing, Multimodal Vision Image Extraction,
+ * Google Course Builder, Canvas, and Swayam 2.0 / NPTEL portals.
  */
 
 (() => {
@@ -34,17 +35,126 @@
 
   // --- 2. DEEP DOM QUERY (SHADOW DOM PIERCING) ---
   function deepQuerySelectorAll(selector, root = document) {
-    let results = Array.from(root.querySelectorAll(selector));
-    const allElements = root.querySelectorAll('*');
-    for (const el of allElements) {
-      if (el.shadowRoot) {
-        results = results.concat(deepQuerySelectorAll(selector, el.shadowRoot));
+    let results = [];
+    try {
+      if (root.querySelectorAll) {
+        results = Array.from(root.querySelectorAll(selector));
       }
-    }
+      const allElements = root.querySelectorAll ? root.querySelectorAll('*') : [];
+      for (const el of allElements) {
+        if (el.shadowRoot) {
+          results = results.concat(deepQuerySelectorAll(selector, el.shadowRoot));
+        }
+      }
+    } catch (e) {}
     return results;
   }
 
-  // --- 3. STRING & TEXT CLEANING ---
+  function deepQuerySelector(selector, root = document) {
+    const list = deepQuerySelectorAll(selector, root);
+    return list.length > 0 ? list[0] : null;
+  }
+
+  // --- 3. MULTIMODAL VISION IMAGE EXTRACTION ---
+  async function imageSrcToDataUrl(imgEl, src) {
+    if (!src) return '';
+    if (src.startsWith('data:image/')) return src;
+
+    // 1. Try offscreen canvas extraction if image is already loaded in DOM
+    try {
+      if (imgEl && imgEl.complete && imgEl.naturalWidth > 0 && imgEl.naturalHeight > 0) {
+        const canvas = document.createElement('canvas');
+        let width = imgEl.naturalWidth;
+        let height = imgEl.naturalHeight;
+        const maxDim = 1280;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(imgEl, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        if (dataUrl && dataUrl.startsWith('data:image/')) {
+          return dataUrl;
+        }
+      }
+    } catch (e) {}
+
+    // 2. Fetch blob & convert to Data URL
+    try {
+      const res = await fetch(src, { mode: 'cors' });
+      if (res.ok) {
+        const blob = await res.blob();
+        return await new Promise((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result || src);
+          reader.onerror = () => resolve(src);
+          reader.readAsDataURL(blob);
+        });
+      }
+    } catch (e) {}
+
+    // Fallback: return raw src URL
+    return src;
+  }
+
+  async function getElementImages(element) {
+    if (!element) return [];
+    const mediaElements = Array.from(element.querySelectorAll('img, svg, canvas'));
+    const images = [];
+
+    for (let i = 0; i < mediaElements.length; i++) {
+      const el = mediaElements[i];
+      try {
+        const tagName = el.tagName.toLowerCase();
+        if (tagName === 'img') {
+          const src = el.currentSrc || el.src || el.getAttribute('src');
+          if (!src || src.includes('data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7')) continue;
+
+          const dataUrl = await imageSrcToDataUrl(el, src);
+          if (dataUrl) {
+            const alt = el.getAttribute('alt') || el.getAttribute('title') || `Image ${i + 1}`;
+            images.push({
+              type: 'image',
+              dataUrl: dataUrl,
+              alt: cleanText(alt)
+            });
+          }
+        } else if (tagName === 'canvas') {
+          try {
+            const dataUrl = el.toDataURL('image/jpeg', 0.85);
+            if (dataUrl && dataUrl.startsWith('data:image/')) {
+              images.push({
+                type: 'canvas',
+                dataUrl: dataUrl,
+                alt: `Canvas Diagram ${i + 1}`
+              });
+            }
+          } catch (e) {}
+        } else if (tagName === 'svg') {
+          try {
+            const svgStr = new XMLSerializer().serializeToString(el);
+            const encoded = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgStr)));
+            images.push({
+              type: 'svg',
+              dataUrl: encoded,
+              alt: `Vector SVG ${i + 1}`
+            });
+          } catch (e) {}
+        }
+      } catch (e) {}
+    }
+    return images;
+  }
+
+  // --- 4. STRING & TEXT CLEANING ---
   function cleanText(str) {
     if (!str) return '';
     return str
@@ -61,20 +171,28 @@
     if (!element) return '';
     const clone = element.cloneNode(true);
 
-    clone.querySelectorAll('button, input, select, textarea, .qt-choices, script, style, .swayam-ai-badge').forEach(el => el.remove());
+    // Remove interactive choices, inputs, scripts, styles, badges
+    clone.querySelectorAll(
+      'button, input, select, textarea, .qt-choices, .choices, .options, .mat-radio-group, .answer-options, .answers, script, style, .swayam-ai-badge'
+    ).forEach(el => el.remove());
 
+    // Convert MathJax / TeX annotation scripts to LaTeX
     clone.querySelectorAll('script[type="math/tex"], annotation[encoding="application/x-tex"]').forEach(math => {
       const tex = math.textContent || '';
       const textNode = document.createTextNode(` \\( ${tex} \\) `);
       math.parentNode.replaceChild(textNode, math);
     });
 
-    clone.querySelectorAll('img').forEach(img => {
-      const alt = img.getAttribute('alt') || img.getAttribute('title') || img.getAttribute('src') || '';
-      const textNode = document.createTextNode(alt ? ` [Image: ${alt}] ` : ' [Image] ');
+    // Replace images and diagrams with indexed labels
+    let imgIdx = 1;
+    clone.querySelectorAll('img, svg, canvas').forEach(img => {
+      const alt = img.getAttribute('alt') || img.getAttribute('title') || '';
+      const textNode = document.createTextNode(alt ? ` [Image ${imgIdx}: ${alt}] ` : ` [Image ${imgIdx}] `);
       img.parentNode.replaceChild(textNode, img);
+      imgIdx++;
     });
 
+    // Format pre and code blocks
     clone.querySelectorAll('pre, code').forEach(code => {
       const formatted = `\n\`\`\`\n${code.innerText || code.textContent}\n\`\`\`\n`;
       const textNode = document.createTextNode(formatted);
@@ -84,8 +202,8 @@
     return cleanText(clone.innerText || clone.textContent || '');
   }
 
-  // --- 4. UNIVERSAL QUESTION EXTRACTOR ---
-  function extractQuestions() {
+  // --- 5. UNIVERSAL QUESTION EXTRACTOR ---
+  async function extractQuestions(includeImages = false) {
     const questions = [];
 
     // Selectors covering Google Course Builder, Canvas, Swayam 2.0, Moodle, and standard LMS structures
@@ -94,73 +212,78 @@
       '.qt-question',
       'fieldset.gcb-question-fieldset',
       'div[id^="qt-"]',
-      'div[id*="question"]',
       '.assessment-question',
       '.quiz-question-container',
       '.quiz_question',
       '.question_holder',
       '.display_question',
-      '.question',
       '.qt-mc-question',
       '.qt-sa-question',
       '.quiz-question',
       '[class*="question-container"]',
       '[class*="QuestionContainer"]',
-      '[role="radiogroup"]'
+      'div[class*="question-row"]',
+      'mat-card.question-card',
+      '.question'
     ].join(', ');
 
-    let qContainers = Array.from(document.querySelectorAll(containerSelectors));
+    let qContainers = deepQuerySelectorAll(containerSelectors);
 
-    // Filter out nested containers
+    // Keep leaf/innermost question containers and discard ancestor wrappers
     qContainers = qContainers.filter(container => {
-      return !qContainers.some(other => other !== container && other.contains(container));
+      return !qContainers.some(other => other !== container && container.contains(other));
     });
 
     // Fallback: Group by radio/checkbox inputs if no standard containers matched
     if (qContainers.length === 0) {
-      const inputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button'));
+      const inputs = deepQuerySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button');
       const groups = new Map();
 
       inputs.forEach(input => {
         const name = input.name || input.getAttribute('name') || '';
-        let parent = null;
         if (name) {
-          parent = input.closest('form, fieldset, table, ul, ol, .card, div') || input.parentElement;
+          if (!groups.has(name)) groups.set(name, []);
+          groups.get(name).push(input);
         } else {
-          parent = input.closest('fieldset, form, table, ul, ol, .card, .form-group, div') || input.parentElement;
-        }
-
-        if (parent) {
-          if (!groups.has(parent)) {
-            groups.set(parent, []);
+          const parent = input.closest('fieldset, .mat-radio-group, .form-group, .card, tr, li, div[class*="question"], div[class*="row"]') || input.parentElement;
+          if (parent) {
+            if (!groups.has(parent)) groups.set(parent, []);
+            groups.get(parent).push(input);
           }
-          groups.get(parent).push(input);
         }
       });
 
-      groups.forEach((inputList, container) => {
+      groups.forEach((inputList) => {
         if (inputList.length >= 2) {
-          qContainers.push(container);
+          const commonWrapper = inputList[0].closest('fieldset, .card, .form-group, tr, div') || inputList[0].parentElement;
+          if (commonWrapper && !qContainers.includes(commonWrapper)) {
+            qContainers.push(commonWrapper);
+          }
         }
       });
     }
 
     // Process each container into structured questions
-    qContainers.forEach((container, index) => {
+    for (let index = 0; index < qContainers.length; index++) {
+      const container = qContainers[index];
       const qId = container.id || container.getAttribute('name') || `q_${index + 1}`;
-      const inputs = Array.from(container.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button'));
-      if (inputs.length === 0) return;
+      const inputs = deepQuerySelectorAll(
+        'input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button',
+        container
+      );
+      if (inputs.length === 0) continue;
 
       const isCheckbox = inputs.some(i => i.type === 'checkbox' || i.getAttribute('role') === 'checkbox' || (i.tagName && i.tagName.toLowerCase().includes('checkbox')));
       const qType = isCheckbox ? 'msq' : 'mcq';
 
       const options = [];
-      inputs.forEach((input, optIdx) => {
+      for (let optIdx = 0; optIdx < inputs.length; optIdx++) {
+        const input = inputs[optIdx];
         let labelText = '';
         let labelEl = null;
 
         if (input.id) {
-          labelEl = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+          labelEl = deepQuerySelector(`label[for="${CSS.escape(input.id)}"]`) || container.querySelector(`label[for="${CSS.escape(input.id)}"]`);
         }
         if (!labelEl) {
           labelEl = input.closest('label, .mat-radio-label, .choice, li, tr, .option');
@@ -169,23 +292,27 @@
           labelEl = input.nextElementSibling;
         }
 
-        if (labelEl) {
-          labelText = extractRichText(labelEl);
-        } else if (input.parentElement) {
-          labelText = extractRichText(input.parentElement);
+        const optTarget = labelEl || input.parentElement;
+        if (optTarget) {
+          labelText = extractRichText(optTarget);
         }
+
+        const optImages = includeImages && optTarget ? await getElementImages(optTarget) : [];
 
         options.push({
           index: optIdx,
           id: input.id || `opt_${index}_${optIdx}`,
           text: labelText || `Option ${optIdx + 1}`,
+          images: optImages,
           inputElement: input,
-          labelElement: labelEl || input.parentElement
+          labelElement: optTarget
         });
-      });
+      }
 
       let qText = '';
-      const bodyEl = container.querySelector('.qt-question-body, .qt-question-description, .question-text, .question-title, .question_text, legend, .gcb-question-header, h2, h3, h4, strong');
+      const bodyEl = container.querySelector(
+        '.qt-question-body, .qt-question-description, .question-text, .question-title, .question_text, legend, .gcb-question-header, h2, h3, h4, strong, p'
+      );
       if (bodyEl) {
         qText = extractRichText(bodyEl);
       } else {
@@ -196,23 +323,26 @@
         qText = `Question ${index + 1}`;
       }
 
+      const qImages = includeImages ? await getElementImages(bodyEl || container) : [];
+
       questions.push({
         index: index,
         id: qId,
         type: qType,
         text: qText,
+        images: qImages,
         options: options,
         containerElement: container
       });
-    });
+    }
 
     return questions;
   }
 
-  // --- 5. REPORT QUESTIONS TO BACKGROUND ---
-  function notifyBackgroundOfQuestions() {
+  // --- 6. REPORT QUESTIONS TO BACKGROUND ---
+  async function notifyBackgroundOfQuestions() {
     try {
-      const questions = extractQuestions();
+      const questions = await extractQuestions(false);
       chrome.runtime.sendMessage({
         action: 'REPORT_FRAME_QUESTIONS',
         count: questions.length,
@@ -229,7 +359,7 @@
     } catch (e) {}
   }
 
-  // --- 6. APPLY SOLUTIONS ---
+  // --- 7. APPLY SOLUTIONS ---
   async function applySolutions(parsedQuestions, solutions, config) {
     let appliedCount = 0;
     const isStealth = config.stealthMode === true;
@@ -346,8 +476,7 @@
       target.dispatchEvent(new MouseEvent('mouseup', eventInit));
       target.dispatchEvent(new MouseEvent('click', eventInit));
 
-      // Trigger standard click method
-      if (typeof target.click === 'function') {
+      if (typeof target.click === 'function' && target !== input) {
         target.click();
       } else if (typeof input.click === 'function') {
         input.click();
@@ -378,7 +507,7 @@
       </div>
     `;
 
-    const targetHeader = container.querySelector('.qt-question-body, .question-text, .gcb-question-header, legend, h2, h3, h4') || container.firstElementChild || container;
+    const targetHeader = container.querySelector('.qt-question-body, .question-text, .gcb-question-header, legend, h2, h3, h4, p') || container.firstElementChild || container;
     targetHeader.appendChild(badge);
   }
 
@@ -401,26 +530,40 @@
     showToast('Selections and highlights cleared.', 'success');
   }
 
-  // --- 7. SOLVE TRIGGER ORCHESTRATION ---
-  async function solveCurrentAssignment() {
+  // --- 8. SOLVE TRIGGER ORCHESTRATION ---
+  async function solveCurrentAssignment(userInitiated = true) {
     if (isSolving) return;
     isSolving = true;
     updateWidgetState('solving');
 
     try {
-      const questions = extractQuestions();
+      const questions = await extractQuestions(true);
       if (questions.length === 0) {
-        throw new Error('No questions found on this page or iframe.');
+        if (userInitiated) {
+          throw new Error('No questions found on this page or iframe.');
+        } else {
+          // Silent return for multi-frame broadcasts on frames without questions
+          updateWidgetState('idle');
+          return;
+        }
       }
 
-      showToast(`Found ${questions.length} questions. Requesting solutions...`);
+      const totalImages = questions.reduce((acc, q) => acc + (q.images ? q.images.length : 0), 0);
+      const imgInfo = totalImages > 0 ? ` (${totalImages} image${totalImages > 1 ? 's' : ''} captured)` : '';
+      showToast(`Found ${questions.length} questions${imgInfo}. Solving with AI...`);
 
       const payload = questions.map(q => ({
         index: q.index,
         id: q.id,
         type: q.type,
         text: q.text,
-        options: q.options.map(o => ({ index: o.index, id: o.id, text: o.text }))
+        images: q.images || [],
+        options: q.options.map(o => ({
+          index: o.index,
+          id: o.id,
+          text: o.text,
+          images: o.images || []
+        }))
       }));
 
       const configRes = await chrome.runtime.sendMessage({ action: 'GET_CONFIG' });
@@ -439,14 +582,16 @@
       showToast(`Solved ${appliedCount} of ${questions.length} questions.`, 'success');
       updateWidgetState('idle');
     } catch (err) {
-      showToast(err.message, 'error');
+      if (userInitiated) {
+        showToast(err.message, 'error');
+      }
       updateWidgetState('idle');
     } finally {
       isSolving = false;
     }
   }
 
-  // --- 8. CLOSED SHADOW DOM FLOATING WIDGET ---
+  // --- 9. CLOSED SHADOW DOM FLOATING WIDGET ---
   function initFloatingWidget() {
     if (document.getElementById('swayam-solver-host')) return;
 
@@ -589,7 +734,7 @@
     shadow.appendChild(container);
     document.body.appendChild(host);
 
-    shadow.getElementById('solve-btn').addEventListener('click', solveCurrentAssignment);
+    shadow.getElementById('solve-btn').addEventListener('click', () => solveCurrentAssignment(true));
     shadow.getElementById('clear-btn').addEventListener('click', clearAllHighlights);
 
     const toolbar = shadow.getElementById('toolbar');
@@ -681,13 +826,13 @@
   window.addEventListener('keydown', (e) => {
     if (e.altKey && (e.key === 's' || e.key === 'S')) {
       e.preventDefault();
-      solveCurrentAssignment();
+      solveCurrentAssignment(true);
     }
   });
 
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'TRIGGER_SOLVE') {
-      solveCurrentAssignment()
+      solveCurrentAssignment(false)
         .then(() => sendResponse({ success: true }))
         .catch(err => sendResponse({ success: false, error: err.message }));
       return true;
@@ -700,11 +845,14 @@
     }
 
     if (request.action === 'GET_PAGE_STATUS') {
-      const questions = extractQuestions();
-      sendResponse({
-        success: true,
-        questionCount: questions.length,
-        url: window.location.href
+      extractQuestions(false).then(questions => {
+        sendResponse({
+          success: true,
+          questionCount: questions.length,
+          url: window.location.href
+        });
+      }).catch(() => {
+        sendResponse({ success: false, questionCount: 0, url: window.location.href });
       });
       return true;
     }

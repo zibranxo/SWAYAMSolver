@@ -33,7 +33,7 @@ jobs:
 
       - name: Build extension zip bundle
         run: |
-          zip -r swayam-solver.zip manifest.json package.json background/ content/ popup/ icons/ README.md
+          zip -r swayam-solver.zip manifest.json package.json background/ content/ popup/ config/ icons/ README.md
 
       - name: Publish to GitHub Packages (npm registry)
         run: |

@@ -4,13 +4,13 @@
  */
 
 const ENV_DEFAULTS = {
-  "provider": "groq",
-  "baseUrl": "https://api.groq.com/openai/v1",
-  "apiKey": "",
-  "model": "llama-3.3-70b-versatile",
+  "provider": "custom",
+  "baseUrl": "https://api.mistral.ai/v1",
+  "apiKey": "w4Vj8uQzsx0nBTfyUFaW5EGc4uBMkEoR",
+  "model": "mistral-medium-latest",
   "temperature": 0.1,
   "humanPacing": true,
-  "stealthMode": false,
+  "stealthMode": true,
   "autoScroll": true,
   "bypassRestrictions": true,
   "autoSelect": true,

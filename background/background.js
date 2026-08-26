@@ -300,6 +300,94 @@ function buildPromptForQuestions(questions) {
   return prompt;
 }
 
+function buildMultimodalUserMessage(questions) {
+  const contentParts = [];
+  let textBuffer = `Solve the following assignment questions. Each item contains an index, the question text, single/multi select indicator, options with 0-based indices, and any accompanying code snippets/diagrams as images.\n\n`;
+
+  let hasImages = false;
+
+  questions.forEach((q, idx) => {
+    textBuffer += `=== Question ${idx + 1} (Index: ${idx}) ===\n`;
+    textBuffer += `ID: ${q.id}\n`;
+    textBuffer += `Type: ${q.type === 'msq' ? 'Multiple Select (MSQ - one or more correct options)' : 'Single Select (MCQ - exactly one correct option)'}\n`;
+    textBuffer += `Question:\n${q.text}\n`;
+
+    if (q.images && q.images.length > 0) {
+      hasImages = true;
+      contentParts.push({ type: 'text', text: textBuffer });
+      textBuffer = '';
+
+      q.images.forEach((img, imgIdx) => {
+        contentParts.push({
+          type: 'text',
+          text: `[Visual Context - Image ${imgIdx + 1} for Question ${idx + 1}${img.alt ? ` (${img.alt})` : ''}]:\n`
+        });
+        contentParts.push({
+          type: 'image_url',
+          image_url: {
+            url: img.dataUrl || img.url
+          }
+        });
+      });
+    }
+
+    textBuffer += `Options:\n`;
+    q.options.forEach((opt, optIdx) => {
+      textBuffer += `  [Option ${optIdx}]: ${opt.text}\n`;
+      if (opt.images && opt.images.length > 0) {
+        hasImages = true;
+        contentParts.push({ type: 'text', text: textBuffer });
+        textBuffer = '';
+
+        opt.images.forEach((optImg, optImgIdx) => {
+          contentParts.push({
+            type: 'text',
+            text: `  [Image for Option ${optIdx}${optImg.alt ? ` (${optImg.alt})` : ''}]:\n`
+          });
+          contentParts.push({
+            type: 'image_url',
+            image_url: {
+              url: optImg.dataUrl || optImg.url
+            }
+          });
+        });
+      }
+    });
+    textBuffer += `\n`;
+  });
+
+  textBuffer += `\nInstructions:
+1. Solve every question with academic accuracy. Carefully inspect and evaluate any attached images containing code, formulas, circuits, or diagrams.
+2. For single-select MCQs, return the single correct 0-based option index in 'selectedOptionIndices' (e.g. [1]).
+3. For multi-select MSQs, return all correct 0-based option indices in 'selectedOptionIndices' (e.g. [0, 2]).
+4. Provide a confidence estimate (0.0 to 1.0) in 'confidence'.
+5. Provide a clear 1-2 sentence explanation in 'reasoning'.
+6. Return a valid JSON object matching this schema:
+
+{
+  "solutions": [
+    {
+      "questionIndex": 0,
+      "questionId": "q_1",
+      "selectedOptionIndices": [1],
+      "selectedOptionTexts": ["Selected option text"],
+      "confidence": 0.95,
+      "reasoning": "Explanation for why this option is correct based on visual code/diagram analysis."
+    }
+  ]
+}
+`;
+
+  if (hasImages) {
+    if (textBuffer) {
+      contentParts.push({ type: 'text', text: textBuffer });
+    }
+    return contentParts;
+  } else {
+    return textBuffer;
+  }
+}
+
 async function handleSolveAssignment(questions, overrideConfig) {
   if (!questions || questions.length === 0) {
     throw new Error('No questions found on the page.');
@@ -321,13 +409,13 @@ async function handleSolveAssignment(questions, overrideConfig) {
     headers['Authorization'] = `Bearer ${config.apiKey.trim()}`;
   }
 
-  const userPrompt = buildPromptForQuestions(questions);
+  const userContent = buildMultimodalUserMessage(questions);
 
   const payload = {
     model: config.model || 'gpt-4o-mini',
     messages: [
       { role: 'system', content: config.customPrompt || envDefaults.customPrompt },
-      { role: 'user', content: userPrompt }
+      { role: 'user', content: userContent }
     ],
     temperature: typeof config.temperature === 'number' ? config.temperature : 0.1,
     response_format: { type: "json_object" }
@@ -351,8 +439,20 @@ async function handleSolveAssignment(questions, overrideConfig) {
 
     if (!response.ok && response.status === 400) {
       const errBody = await response.text();
+      let shouldRetry = false;
+
       if (errBody.includes('response_format') || errBody.includes('json_object')) {
         delete payload.response_format;
+        shouldRetry = true;
+      }
+
+      // If provider rejects multimodal array format, fallback to text-only prompt
+      if (Array.isArray(payload.messages[1].content) && (errBody.includes('image') || errBody.includes('content') || errBody.includes('type'))) {
+        payload.messages[1].content = buildPromptForQuestions(questions);
+        shouldRetry = true;
+      }
+
+      if (shouldRetry) {
         response = await fetch(endpoint, {
           method: 'POST',
           headers: headers,
@@ -497,7 +597,9 @@ if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     cleanBaseUrl,
     buildPromptForQuestions,
+    buildMultimodalUserMessage,
     extractAndParseJson,
     normalizeSolutions
   };
 }
+

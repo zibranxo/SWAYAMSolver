@@ -8,19 +8,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       baseUrl: 'https://api.groq.com/openai/v1',
       model: 'llama-3.3-70b-versatile',
       keyPlaceholder: 'gsk_...',
-      keyHelp: 'API key from console.groq.com'
+      keyHelp: 'API key from console.groq.com (use llama-3.2-11b-vision-preview for image-heavy quizzes)'
     },
     openai: {
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-4o-mini',
       keyPlaceholder: 'sk-proj-...',
-      keyHelp: 'API key from platform.openai.com'
+      keyHelp: 'API key from platform.openai.com (Full Multimodal Vision supported)'
     },
     openrouter: {
       baseUrl: 'https://openrouter.ai/api/v1',
-      model: 'meta-llama/llama-3.3-70b-instruct:free',
+      model: 'google/gemini-2.0-flash-001',
       keyPlaceholder: 'sk-or-v1-...',
-      keyHelp: 'API key from openrouter.ai'
+      keyHelp: 'API key from openrouter.ai (Fast Multimodal Vision supported)'
     },
     deepseek: {
       baseUrl: 'https://api.deepseek.com/v1',
@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     },
     ollama: {
       baseUrl: 'http://localhost:11434/v1',
-      model: 'llama3.1:latest',
+      model: 'llama3.2-vision:latest',
       keyPlaceholder: 'Local endpoint (no key required)',
       keyHelp: 'Requires local Ollama instance with OLLAMA_ORIGINS="*"'
     },

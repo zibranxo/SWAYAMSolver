@@ -6,6 +6,7 @@ const assert = require('assert');
 const {
   cleanBaseUrl,
   buildPromptForQuestions,
+  buildMultimodalUserMessage,
   extractAndParseJson,
   normalizeSolutions
 } = require('../background/background.js');
@@ -128,7 +129,7 @@ test('Handles answerIndex and option text fallback', () => {
   assert.deepStrictEqual(normalized[1].selectedOptionIndices, [0]);
 });
 
-console.log('\n--- 5. Prompt Generation Tests ---');
+console.log('\n--- 5. Prompt Generation & Multimodal Vision Tests ---');
 
 test('Formats prompt with indices, question types, and option items', () => {
   const questions = [
@@ -144,6 +145,78 @@ test('Formats prompt with indices, question types, and option items', () => {
   assert(prompt.includes('=== Question 1 (Index: 0) ==='));
   assert(prompt.includes('Single Select (MCQ - exactly one correct option)'));
   assert(prompt.includes('[Option 1]: 4'));
+});
+
+test('Returns string for text-only questions via buildMultimodalUserMessage', () => {
+  const questions = [
+    {
+      id: 'qt-1',
+      type: 'mcq',
+      text: 'What is the capital of France?',
+      options: [{ text: 'London' }, { text: 'Paris' }]
+    }
+  ];
+
+  const result = buildMultimodalUserMessage(questions);
+  assert(typeof result === 'string', 'Expected string output for text-only questions');
+  assert(result.includes('Paris'));
+});
+
+test('Builds multimodal array payload when question contains images (code snippets / diagrams)', () => {
+  const questions = [
+    {
+      id: 'qt-image-1',
+      type: 'mcq',
+      text: 'Consider the Python dictionary update code shown in the image below:',
+      images: [
+        {
+          type: 'image',
+          dataUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+          alt: 'Python code snippet image'
+        }
+      ],
+      options: [
+        { text: '{"Fiction": 12, "Science": 12, "History": 7, "Technology": 10, "Art": 6}' },
+        { text: '{"Fiction": 12, "Science": 8, "History": 5, "Technology": 10}' }
+      ]
+    }
+  ];
+
+  const result = buildMultimodalUserMessage(questions);
+  assert(Array.isArray(result), 'Expected array output for questions containing images');
+  
+  const textParts = result.filter(p => p.type === 'text');
+  const imageParts = result.filter(p => p.type === 'image_url');
+
+  assert(textParts.length >= 2, `Expected at least 2 text parts, got ${textParts.length}`);
+  assert(imageParts.length === 1, `Expected 1 image part, got ${imageParts.length}`);
+  assert(imageParts[0].image_url.url.startsWith('data:image/png;base64,'), 'Expected base64 dataUrl in image part');
+  assert(textParts.some(t => t.text.includes('Python code snippet image')), 'Expected alt text in context');
+});
+
+test('Builds multimodal array payload when options contain diagrams/images', () => {
+  const questions = [
+    {
+      id: 'qt-image-opt',
+      type: 'mcq',
+      text: 'Which circuit diagram represents a NAND gate?',
+      options: [
+        {
+          text: 'Circuit A',
+          images: [{ type: 'image', dataUrl: 'data:image/jpeg;base64,abc123circuitA', alt: 'Circuit A Diagram' }]
+        },
+        {
+          text: 'Circuit B',
+          images: [{ type: 'image', dataUrl: 'data:image/jpeg;base64,def456circuitB', alt: 'Circuit B Diagram' }]
+        }
+      ]
+    }
+  ];
+
+  const result = buildMultimodalUserMessage(questions);
+  assert(Array.isArray(result), 'Expected array for option images');
+  const imageParts = result.filter(p => p.type === 'image_url');
+  assert.strictEqual(imageParts.length, 2, 'Expected 2 option image parts');
 });
 
 console.log(`\nTests completed: ${passedTests} / ${totalTests} passed.`);
