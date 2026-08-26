@@ -1,0 +1,22 @@
+{
+  "name": "swayam-solver",
+  "version": "2.0.0",
+  "description": "Autonomous AI solver for SWAYAM & NPTEL MCQ/MSQ assignments using any OpenAI-compatible LLM.",
+  "main": "background/background.js",
+  "scripts": {
+    "test": "node test/unit_tests.js && node test/dom_e2e_test.js",
+    "lint": "node -c background/background.js content/content.js popup/popup.js test/unit_tests.js test/dom_e2e_test.js"
+  },
+  "keywords": [
+    "swayam",
+    "nptel",
+    "chrome-extension",
+    "llm",
+    "openai",
+    "groq",
+    "deepseek",
+    "mcq-solver"
+  ],
+  "author": "",
+  "license": "MIT"
+}

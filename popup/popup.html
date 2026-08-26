@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SWAYAMSolver</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="header">
+      <div class="brand">
+        <div class="logo">⚡</div>
+        <div>
+          <h1 class="title">SWAYAM<span class="highlight">Solver</span></h1>
+          <p class="subtitle">AI Assignment Assistant v2.0</p>
+        </div>
+      </div>
+    </header>
+
+    <!-- Page Status Card -->
+    <div class="card status-card">
+      <div class="status-indicator">
+        <span class="dot" id="status-dot"></span>
+        <span class="status-text" id="status-text">Detecting assignment...</span>
+      </div>
+      <div class="quick-actions">
+        <button id="solve-now-btn" class="btn btn-primary" title="Solve active assignment">
+          <span class="btn-icon">⚡</span> Solve Assignment
+        </button>
+        <button id="clear-page-btn" class="btn btn-secondary" title="Clear highlights">
+          ✕
+        </button>
+      </div>
+    </div>
+
+    <!-- Provider & API Config -->
+    <section class="section">
+      <h2 class="section-title">LLM Provider Configuration</h2>
+
+      <div class="form-group">
+        <label for="provider-select">Provider Preset</label>
+        <select id="provider-select" class="form-control">
+          <option value="groq">Groq (Ultra-Fast & Free Tier)</option>
+          <option value="openai">OpenAI (Official)</option>
+          <option value="openrouter">OpenRouter (Multi-Model)</option>
+          <option value="deepseek">DeepSeek AI</option>
+          <option value="ollama">Local Ollama (localhost:11434)</option>
+          <option value="custom">Custom (OpenAI-Compatible)</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="base-url">API Base URL</label>
+        <input type="text" id="base-url" class="form-control" placeholder="https://api.groq.com/openai/v1">
+      </div>
+
+      <div class="form-group">
+        <label for="api-key">API Key</label>
+        <div class="input-with-action">
+          <input type="password" id="api-key" class="form-control" placeholder="gsk_... or sk-...">
+          <button type="button" id="toggle-key-visibility" class="btn-icon-addon" title="Toggle visibility">👁</button>
+        </div>
+        <small class="help-text" id="key-help">Stored locally in your browser.</small>
+      </div>
+
+      <div class="form-group">
+        <label for="model-name">Model Name</label>
+        <input type="text" id="model-name" class="form-control" placeholder="llama-3.3-70b-versatile">
+      </div>
+
+      <div class="connection-test-row">
+        <button id="test-connection-btn" class="btn btn-outline">
+          <span class="btn-icon">🔌</span> Test Connection
+        </button>
+        <span id="test-result-badge" class="badge">Not tested</span>
+      </div>
+    </section>
+
+    <!-- Preferences & Automation -->
+    <details class="details-section">
+      <summary class="details-summary">Automation & Preferences</summary>
+      <div class="details-content">
+        <div class="toggle-group">
+          <label class="toggle-label" for="auto-select-toggle">
+            <span>Auto-Click Answers</span>
+            <small>Programmatically select radio/checkbox options</small>
+          </label>
+          <input type="checkbox" id="auto-select-toggle" class="switch" checked>
+        </div>
+
+        <div class="toggle-group">
+          <label class="toggle-label" for="highlight-only-toggle">
+            <span>Highlight Only Mode</span>
+            <small>Green highlight only, without clicking inputs</small>
+          </label>
+          <input type="checkbox" id="highlight-only-toggle" class="switch">
+        </div>
+
+        <div class="toggle-group">
+          <label class="toggle-label" for="show-reasoning-toggle">
+            <span>Show AI Rationale</span>
+            <small>Display explanation badges & tooltips on page</small>
+          </label>
+          <input type="checkbox" id="show-reasoning-toggle" class="switch" checked>
+        </div>
+
+        <div class="toggle-group">
+          <label class="toggle-label" for="auto-submit-toggle">
+            <span>Auto-Submit Assignment</span>
+            <small>Automatically click submit after solving</small>
+          </label>
+          <input type="checkbox" id="auto-submit-toggle" class="switch">
+        </div>
+
+        <div class="form-group" id="submit-delay-group" style="display: none;">
+          <label for="submit-delay">Submission Delay (seconds)</label>
+          <input type="number" id="submit-delay" class="form-control" min="1" max="30" value="3">
+        </div>
+
+        <div class="form-group">
+          <label for="custom-prompt">Custom System Prompt</label>
+          <textarea id="custom-prompt" class="form-control" rows="3" placeholder="Optional custom instructions for the LLM..."></textarea>
+        </div>
+      </div>
+    </details>
+
+    <!-- Footer Actions -->
+    <footer class="footer">
+      <button id="save-settings-btn" class="btn btn-save">Save Settings</button>
+      <span id="save-status-text" class="save-status"></span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
