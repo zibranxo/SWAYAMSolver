@@ -1,5 +1,6 @@
 /**
- * SWAYAM Solver - Content Script Engine with Anti-Detection Architecture
+ * SWAYAM Solver - Universal DOM Scraper & Content Engine
+ * Supports iframes, Shadow DOM piercing, Google Course Builder, Canvas, and Swayam 2.0.
  */
 
 (() => {
@@ -11,10 +12,9 @@
   let lastEvaluatedUrl = window.location.href;
   let shadowRootRef = null;
 
-  // --- 1. ANTI-DETECTION & RESTRICTIONS BYPASS ---
+  // --- 1. ANTI-DETECTION SHIELD ---
   function initAntiDetectionShield() {
     try {
-      // Prevent websites from blocking copy, paste, select, and context menu
       const bypassEvents = ['copy', 'cut', 'paste', 'contextmenu', 'selectstart', 'dragstart'];
       bypassEvents.forEach(evtName => {
         window.addEventListener(evtName, (e) => {
@@ -22,9 +22,7 @@
         }, true);
       });
 
-      // Prevent canvas / DOM tampering detection loops
       document.addEventListener('keydown', (e) => {
-        // Protect developer shortcuts like F12 or Ctrl+Shift+I if blocked
         if (e.key === 'F12' || (e.ctrlKey && e.shiftKey && (e.key === 'I' || e.key === 'i' || e.key === 'J' || e.key === 'j'))) {
           e.stopPropagation();
         }
@@ -34,7 +32,19 @@
 
   initAntiDetectionShield();
 
-  // --- 2. STRING & DOM EXTRACTION ---
+  // --- 2. DEEP DOM QUERY (SHADOW DOM PIERCING) ---
+  function deepQuerySelectorAll(selector, root = document) {
+    let results = Array.from(root.querySelectorAll(selector));
+    const allElements = root.querySelectorAll('*');
+    for (const el of allElements) {
+      if (el.shadowRoot) {
+        results = results.concat(deepQuerySelectorAll(selector, el.shadowRoot));
+      }
+    }
+    return results;
+  }
+
+  // --- 3. STRING & TEXT CLEANING ---
   function cleanText(str) {
     if (!str) return '';
     return str
@@ -74,27 +84,58 @@
     return cleanText(clone.innerText || clone.textContent || '');
   }
 
+  // --- 4. UNIVERSAL QUESTION EXTRACTOR ---
   function extractQuestions() {
     const questions = [];
 
-    let qContainers = Array.from(document.querySelectorAll(
-      '.gcb-question, .qt-question, fieldset.gcb-question-fieldset, div[id^="qt-"], .assessment-question, .quiz-question-container, .qt-mc-question, .qt-sa-question'
-    ));
+    // Selectors covering Google Course Builder, Canvas, Swayam 2.0, Moodle, and standard LMS structures
+    const containerSelectors = [
+      '.gcb-question',
+      '.qt-question',
+      'fieldset.gcb-question-fieldset',
+      'div[id^="qt-"]',
+      'div[id*="question"]',
+      '.assessment-question',
+      '.quiz-question-container',
+      '.quiz_question',
+      '.question_holder',
+      '.display_question',
+      '.question',
+      '.qt-mc-question',
+      '.qt-sa-question',
+      '.quiz-question',
+      '[class*="question-container"]',
+      '[class*="QuestionContainer"]',
+      '[role="radiogroup"]'
+    ].join(', ');
 
+    let qContainers = Array.from(document.querySelectorAll(containerSelectors));
+
+    // Filter out nested containers
     qContainers = qContainers.filter(container => {
       return !qContainers.some(other => other !== container && other.contains(container));
     });
 
+    // Fallback: Group by radio/checkbox inputs if no standard containers matched
     if (qContainers.length === 0) {
-      const inputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+      const inputs = Array.from(document.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button'));
       const groups = new Map();
 
       inputs.forEach(input => {
-        const parent = input.closest('fieldset, .card, form, .form-group, div') || input.parentElement;
-        if (!groups.has(parent)) {
-          groups.set(parent, []);
+        const name = input.name || input.getAttribute('name') || '';
+        let parent = null;
+        if (name) {
+          parent = input.closest('form, fieldset, table, ul, ol, .card, div') || input.parentElement;
+        } else {
+          parent = input.closest('fieldset, form, table, ul, ol, .card, .form-group, div') || input.parentElement;
         }
-        groups.get(parent).push(input);
+
+        if (parent) {
+          if (!groups.has(parent)) {
+            groups.set(parent, []);
+          }
+          groups.get(parent).push(input);
+        }
       });
 
       groups.forEach((inputList, container) => {
@@ -104,12 +145,13 @@
       });
     }
 
+    // Process each container into structured questions
     qContainers.forEach((container, index) => {
       const qId = container.id || container.getAttribute('name') || `q_${index + 1}`;
-      const inputs = Array.from(container.querySelectorAll('input[type="radio"], input[type="checkbox"]'));
+      const inputs = Array.from(container.querySelectorAll('input[type="radio"], input[type="checkbox"], [role="radio"], [role="checkbox"], mat-radio-button, paper-radio-button'));
       if (inputs.length === 0) return;
 
-      const isCheckbox = inputs.some(i => i.type === 'checkbox');
+      const isCheckbox = inputs.some(i => i.type === 'checkbox' || i.getAttribute('role') === 'checkbox' || (i.tagName && i.tagName.toLowerCase().includes('checkbox')));
       const qType = isCheckbox ? 'msq' : 'mcq';
 
       const options = [];
@@ -121,9 +163,9 @@
           labelEl = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
         }
         if (!labelEl) {
-          labelEl = input.closest('label');
+          labelEl = input.closest('label, .mat-radio-label, .choice, li, tr, .option');
         }
-        if (!labelEl && input.nextElementSibling && input.nextElementSibling.tagName === 'LABEL') {
+        if (!labelEl && input.nextElementSibling) {
           labelEl = input.nextElementSibling;
         }
 
@@ -143,7 +185,7 @@
       });
 
       let qText = '';
-      const bodyEl = container.querySelector('.qt-question-body, .qt-question-description, .question-text, .question-title, legend, .gcb-question-header');
+      const bodyEl = container.querySelector('.qt-question-body, .qt-question-description, .question-text, .question-title, .question_text, legend, .gcb-question-header, h2, h3, h4, strong');
       if (bodyEl) {
         qText = extractRichText(bodyEl);
       } else {
@@ -167,7 +209,27 @@
     return questions;
   }
 
-  // --- 3. HUMANIZED EXECUTION & SOLUTION INJECTION ---
+  // --- 5. REPORT QUESTIONS TO BACKGROUND ---
+  function notifyBackgroundOfQuestions() {
+    try {
+      const questions = extractQuestions();
+      chrome.runtime.sendMessage({
+        action: 'REPORT_FRAME_QUESTIONS',
+        count: questions.length,
+        url: window.location.href,
+        isTopFrame: window === window.top
+      }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+
+      // If this frame has questions, initialize in-page widget
+      if (questions.length > 0) {
+        initFloatingWidget();
+      }
+    } catch (e) {}
+  }
+
+  // --- 6. APPLY SOLUTIONS ---
   async function applySolutions(parsedQuestions, solutions, config) {
     let appliedCount = 0;
     const isStealth = config.stealthMode === true;
@@ -178,7 +240,6 @@
       const sol = solutions.find(s => s.questionIndex === idx || s.questionId === q.id) || solutions[idx];
       if (!sol || !sol.selectedOptionIndices || sol.selectedOptionIndices.length === 0) continue;
 
-      // Natural auto-scroll to current question
       if (config.autoScroll !== false && q.containerElement) {
         q.containerElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
       }
@@ -189,7 +250,6 @@
         const shouldSelect = indicesToSelect.includes(opt.index);
         const inputEl = opt.inputElement;
 
-        // In non-stealth mode, clear previous highlight classes
         if (!isStealth && opt.labelElement) {
           opt.labelElement.classList.remove('swayam-solved-option');
         }
@@ -217,14 +277,12 @@
         }
       });
 
-      // Inject badge only if not in stealth mode
       if (!isStealth && config.showReasoning !== false) {
         injectRationaleBadge(q.containerElement, sol);
       }
 
       appliedCount++;
 
-      // Human-like reading & answering delay between questions
       if (isHumanPaced && idx < parsedQuestions.length - 1) {
         const minD = config.minDelay || 1200;
         const maxD = config.maxDelay || 3200;
@@ -236,7 +294,6 @@
       }
     }
 
-    // Optional Auto-Submit
     if (config.autoSubmit && !config.highlightOnly && appliedCount > 0) {
       const submitDelay = config.autoSubmitDelay || 5000;
       showToast(`Auto-submitting in ${Math.round(submitDelay / 1000)}s...`, 'success');
@@ -248,9 +305,6 @@
     return appliedCount;
   }
 
-  /**
-   * Realistic pointer and input dispatching with natural coordinates
-   */
   function selectInputElementRealistic(input, label) {
     if (!input) return;
 
@@ -258,9 +312,8 @@
       const target = label || input;
       const rect = target.getBoundingClientRect();
 
-      // Compute randomized natural coordinates inside target element
-      const clientX = Math.round(rect.left + rect.width * (0.25 + Math.random() * 0.5));
-      const clientY = Math.round(rect.top + rect.height * (0.25 + Math.random() * 0.5));
+      const clientX = Math.round(rect.left + Math.max(5, rect.width * (0.25 + Math.random() * 0.5)));
+      const clientY = Math.round(rect.top + Math.max(5, rect.height * (0.25 + Math.random() * 0.5)));
       const screenX = window.screenX + clientX;
       const screenY = window.screenY + clientY;
 
@@ -276,7 +329,6 @@
         buttons: 1
       };
 
-      // Natural browser interaction sequence
       target.dispatchEvent(new PointerEvent('pointerover', eventInit));
       target.dispatchEvent(new PointerEvent('pointerenter', eventInit));
       target.dispatchEvent(new PointerEvent('pointerdown', eventInit));
@@ -286,16 +338,25 @@
         input.focus({ preventScroll: true });
       }
 
-      input.checked = true;
+      if ('checked' in input) {
+        input.checked = true;
+      }
 
       target.dispatchEvent(new PointerEvent('pointerup', eventInit));
       target.dispatchEvent(new MouseEvent('mouseup', eventInit));
       target.dispatchEvent(new MouseEvent('click', eventInit));
 
+      // Trigger standard click method
+      if (typeof target.click === 'function') {
+        target.click();
+      } else if (typeof input.click === 'function') {
+        input.click();
+      }
+
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
     } catch (e) {
-      input.checked = true;
+      if ('checked' in input) input.checked = true;
     }
   }
 
@@ -317,13 +378,13 @@
       </div>
     `;
 
-    const targetHeader = container.querySelector('.qt-question-body, .question-text, .gcb-question-header, legend, h3, h4') || container.firstElementChild || container;
+    const targetHeader = container.querySelector('.qt-question-body, .question-text, .gcb-question-header, legend, h2, h3, h4') || container.firstElementChild || container;
     targetHeader.appendChild(badge);
   }
 
   function triggerAutoSubmit() {
     const submitBtn = document.querySelector(
-      'input[type="submit"], button.gcb-submit-button, input.gcb-submit-button, #gcb-submit-answers, button[type="submit"], .submit-assignment-button'
+      'input[type="submit"], button.gcb-submit-button, input.gcb-submit-button, #gcb-submit-answers, button[type="submit"], .submit-assignment-button, button:not([disabled])'
     );
 
     if (submitBtn) {
@@ -340,7 +401,7 @@
     showToast('Selections and highlights cleared.', 'success');
   }
 
-  // --- 4. SOLVE TRIGGER ---
+  // --- 7. SOLVE TRIGGER ORCHESTRATION ---
   async function solveCurrentAssignment() {
     if (isSolving) return;
     isSolving = true;
@@ -349,7 +410,7 @@
     try {
       const questions = extractQuestions();
       if (questions.length === 0) {
-        throw new Error('No questions found on the active page.');
+        throw new Error('No questions found on this page or iframe.');
       }
 
       showToast(`Found ${questions.length} questions. Requesting solutions...`);
@@ -385,7 +446,7 @@
     }
   }
 
-  // --- 5. ISOLATED CLOSED SHADOW DOM WIDGET ---
+  // --- 8. CLOSED SHADOW DOM FLOATING WIDGET ---
   function initFloatingWidget() {
     if (document.getElementById('swayam-solver-host')) return;
 
@@ -396,11 +457,9 @@
     host.style.right = '24px';
     host.style.zIndex = '2147483647';
 
-    // Create closed shadow root to completely hide extension DOM from page scripts
     const shadow = host.attachShadow({ mode: 'closed' });
     shadowRootRef = shadow;
 
-    // Restore position
     try {
       const savedPos = JSON.parse(localStorage.getItem('swayam_solver_pos'));
       if (savedPos && savedPos.x && savedPos.y) {
@@ -530,7 +589,6 @@
     shadow.appendChild(container);
     document.body.appendChild(host);
 
-    // Event listeners inside shadow root
     shadow.getElementById('solve-btn').addEventListener('click', solveCurrentAssignment);
     shadow.getElementById('clear-btn').addEventListener('click', clearAllHighlights);
 
@@ -656,6 +714,7 @@
     if (window.location.href !== lastEvaluatedUrl) {
       lastEvaluatedUrl = window.location.href;
       clearAllHighlights();
+      notifyBackgroundOfQuestions();
     }
   }
 
@@ -673,11 +732,12 @@
 
   window.addEventListener('popstate', checkUrlChange);
   window.addEventListener('hashchange', checkUrlChange);
-  setInterval(checkUrlChange, 1000);
+  setInterval(notifyBackgroundOfQuestions, 2000);
 
+  // Initial detection & report
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initFloatingWidget);
+    document.addEventListener('DOMContentLoaded', notifyBackgroundOfQuestions);
   } else {
-    initFloatingWidget();
+    notifyBackgroundOfQuestions();
   }
 })();

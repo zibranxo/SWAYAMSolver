@@ -1,5 +1,5 @@
 /**
- * SWAYAM Solver - Popup Controller
+ * SWAYAM Solver - Popup Controller with Multi-Frame Support
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -193,7 +193,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Check active tab status
+  // Multi-frame active tab check
   async function checkActiveTab() {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -202,18 +202,28 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_STATUS' }, (res) => {
-        if (chrome.runtime.lastError || !res) {
-          statusDot.className = 'status-dot';
-          statusText.textContent = 'No assignment open';
-          solveNowBtn.disabled = false;
-        } else if (res.success && res.questionCount > 0) {
+      // First query background coordinator for aggregated frame counts
+      chrome.runtime.sendMessage({ action: 'GET_TAB_STATUS', tabId: tab.id }, (bgRes) => {
+        if (bgRes && bgRes.success && bgRes.totalCount > 0) {
           statusDot.className = 'status-dot active';
-          statusText.textContent = `${res.questionCount} questions found`;
+          statusText.textContent = `${bgRes.totalCount} questions found`;
           solveNowBtn.disabled = false;
         } else {
-          statusDot.className = 'status-dot warning';
-          statusText.textContent = 'No questions detected';
+          // Direct fallback check
+          chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_STATUS' }, (res) => {
+            if (chrome.runtime.lastError || !res) {
+              statusDot.className = 'status-dot';
+              statusText.textContent = 'Open an assignment page';
+              solveNowBtn.disabled = false;
+            } else if (res.success && res.questionCount > 0) {
+              statusDot.className = 'status-dot active';
+              statusText.textContent = `${res.questionCount} questions found`;
+              solveNowBtn.disabled = false;
+            } else {
+              statusDot.className = 'status-dot warning';
+              statusText.textContent = 'Scanning for questions...';
+            }
+          });
         }
       });
     } catch (e) {
@@ -223,7 +233,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   checkActiveTab();
 
-  // Solve button
+  // Solve button (routed through background coordinator for multi-frame support)
   solveNowBtn.addEventListener('click', async () => {
     await saveSettings(false);
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -232,12 +242,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     solveNowBtn.disabled = true;
     solveNowBtn.textContent = 'Solving...';
 
-    chrome.tabs.sendMessage(tab.id, { action: 'TRIGGER_SOLVE' }, (res) => {
-      solveNowBtn.disabled = false;
-      solveNowBtn.textContent = 'Solve Current Assignment';
-      if (chrome.runtime.lastError) {
-        alert('Could not trigger solver. Please refresh the assignment tab and try again.');
-      }
+    chrome.runtime.sendMessage({ action: 'TRIGGER_SOLVE_TAB', tabId: tab.id }, () => {
+      setTimeout(() => {
+        solveNowBtn.disabled = false;
+        solveNowBtn.textContent = 'Solve Current Assignment';
+      }, 1500);
     });
   });
 
@@ -245,7 +254,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   clearPageBtn.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab && tab.id) {
-      chrome.tabs.sendMessage(tab.id, { action: 'CLEAR_HIGHLIGHTS' });
+      chrome.runtime.sendMessage({ action: 'CLEAR_TAB_HIGHLIGHTS', tabId: tab.id });
     }
   });
 });

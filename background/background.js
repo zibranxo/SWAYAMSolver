@@ -1,6 +1,6 @@
 /**
  * SWAYAM Solver - Background Service Worker
- * Manages API requests and handles OpenAI-compatible communication.
+ * Manages API requests, multi-frame coordination, and OpenAI-compatible communication.
  */
 
 const DEFAULT_CONFIG = {
@@ -27,6 +27,10 @@ For multi-select MSQs, select all correct option indices.
 Output must be valid JSON adhering strictly to the requested schema.`
 };
 
+// Track detected questions across frames for each tab
+// Map: tabId -> Map(frameId -> { count, url, isTopFrame })
+const tabFramesMap = new Map();
+
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onInstalled) {
   chrome.runtime.onInstalled.addListener(async () => {
     const existing = await chrome.storage.local.get(null);
@@ -35,8 +39,99 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onInstalle
   });
 }
 
+// Clean up frame state when tab is closed or navigated
+if (typeof chrome !== 'undefined' && chrome.tabs) {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    tabFramesMap.delete(tabId);
+  });
+  chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+    if (changeInfo.status === 'loading') {
+      tabFramesMap.delete(tabId);
+    }
+  });
+}
+
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    // 1. Content script reporting question count for its frame
+    if (request.action === 'REPORT_FRAME_QUESTIONS' && sender.tab) {
+      const tabId = sender.tab.id;
+      const frameId = sender.frameId || 0;
+      if (!tabFramesMap.has(tabId)) {
+        tabFramesMap.set(tabId, new Map());
+      }
+      tabFramesMap.get(tabId).set(frameId, {
+        count: request.count || 0,
+        url: request.url || sender.tab.url,
+        isTopFrame: request.isTopFrame || frameId === 0
+      });
+      sendResponse({ received: true });
+      return false;
+    }
+
+    // 2. Popup asking for tab question count
+    if (request.action === 'GET_TAB_STATUS') {
+      const tabId = request.tabId;
+      let totalCount = 0;
+      let targetFrameIds = [];
+
+      if (tabFramesMap.has(tabId)) {
+        tabFramesMap.get(tabId).forEach((frameData, frameId) => {
+          if (frameData.count > 0) {
+            totalCount += frameData.count;
+            targetFrameIds.push(frameId);
+          }
+        });
+      }
+
+      sendResponse({
+        success: true,
+        totalCount: totalCount,
+        targetFrameIds: targetFrameIds
+      });
+      return false;
+    }
+
+    // 3. Popup triggering solve across all frames in a tab
+    if (request.action === 'TRIGGER_SOLVE_TAB') {
+      const tabId = request.tabId;
+      const frames = tabFramesMap.get(tabId);
+      const targetFrames = [];
+
+      if (frames) {
+        frames.forEach((f, frameId) => {
+          if (f.count > 0) targetFrames.push(frameId);
+        });
+      }
+
+      if (targetFrames.length === 0) {
+        // Fallback: Broadcast to all frames in the tab
+        chrome.tabs.sendMessage(tabId, { action: 'TRIGGER_SOLVE' }, () => {
+          if (chrome.runtime.lastError) {}
+        });
+        sendResponse({ success: true, message: 'Broadcast to all frames' });
+      } else {
+        targetFrames.forEach((frameId) => {
+          chrome.tabs.sendMessage(tabId, { action: 'TRIGGER_SOLVE' }, { frameId }, () => {
+            if (chrome.runtime.lastError) {}
+          });
+        });
+        sendResponse({ success: true, targetFrames });
+      }
+      return false;
+    }
+
+    // 4. Clear highlights across tab frames
+    if (request.action === 'CLEAR_TAB_HIGHLIGHTS') {
+      const tabId = request.tabId;
+      chrome.tabs.sendMessage(tabId, { action: 'CLEAR_HIGHLIGHTS' }, () => {
+        if (chrome.runtime.lastError) {}
+      });
+      sendResponse({ success: true });
+      return false;
+    }
+
+    // 5. Test API Connection
     if (request.action === 'TEST_CONNECTION') {
       handleTestConnection(request.config)
         .then((res) => sendResponse({ success: true, data: res }))
@@ -44,6 +139,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    // 6. Execute LLM Solve Assignment
     if (request.action === 'SOLVE_ASSIGNMENT') {
       handleSolveAssignment(request.questions, request.overrideConfig)
         .then((res) => sendResponse({ success: true, solutions: res }))
@@ -51,6 +147,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
+    // 7. Get Config
     if (request.action === 'GET_CONFIG') {
       chrome.storage.local.get(null).then((config) => {
         sendResponse({ success: true, config: { ...DEFAULT_CONFIG, ...config } });

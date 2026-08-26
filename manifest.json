@@ -1,20 +1,15 @@
 {
   "manifest_version": 3,
   "name": "SWAYAM Solver",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Automated helper for SWAYAM and NPTEL multiple choice assignments.",
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
-    "*://*.nptel.ac.in/*",
-    "*://*.swayam.gov.in/*",
-    "*://onlinecourses.nptel.ac.in/*",
-    "*://onlinecourses.swayam2.ac.in/*",
-    "https://*/*",
-    "http://localhost/*",
-    "http://127.0.0.1/*"
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background/background.js"
@@ -22,12 +17,10 @@
   "content_scripts": [
     {
       "matches": [
-        "*://*.nptel.ac.in/*",
-        "*://*.swayam.gov.in/*",
-        "*://onlinecourses.nptel.ac.in/*",
-        "*://onlinecourses.swayam2.ac.in/*",
-        "file://*/*"
+        "<all_urls>"
       ],
+      "all_frames": true,
+      "match_about_blank": true,
       "js": ["content/content.js"],
       "css": ["content/content.css"],
       "run_at": "document_idle"
