@@ -7,42 +7,69 @@ try {
   importScripts('../config/env.js');
 } catch (e) {}
 
-const envDefaults = (typeof self !== 'undefined' && self.ENV_CONFIG) ? self.ENV_CONFIG : {};
+function parseEnvString(text) {
+  const env = {};
+  if (!text) return env;
+  text.split(/\r?\n/).forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const eqIdx = trimmed.indexOf('=');
+    if (eqIdx !== -1) {
+      const key = trimmed.slice(0, eqIdx).trim();
+      let val = trimmed.slice(eqIdx + 1).trim();
+      if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+        val = val.slice(1, -1);
+      }
+      env[key] = val;
+    }
+  });
+  return env;
+}
 
-const DEFAULT_CONFIG = {
-  provider: envDefaults.provider || 'groq',
-  baseUrl: envDefaults.baseUrl || 'https://api.groq.com/openai/v1',
-  apiKey: envDefaults.apiKey || '',
-  model: envDefaults.model || 'llama-3.3-70b-versatile',
-  temperature: typeof envDefaults.temperature === 'number' ? envDefaults.temperature : 0.1,
-  autoSelect: envDefaults.autoSelect !== false,
-  highlightOnly: envDefaults.highlightOnly === true,
-  stealthMode: envDefaults.stealthMode === true,
-  humanPacing: envDefaults.humanPacing !== false,
-  minDelay: 1200,
-  maxDelay: 3200,
-  autoScroll: envDefaults.autoScroll !== false,
-  bypassRestrictions: envDefaults.bypassRestrictions !== false,
-  autoSubmit: envDefaults.autoSubmit === true,
-  autoSubmitDelay: envDefaults.autoSubmitDelay || 5000,
-  showReasoning: envDefaults.showReasoning !== false,
-  customPrompt: `You are an academic subject matter expert solving multiple choice questions (MCQs) and multiple select questions (MSQs) from the SWAYAM / NPTEL portal.
+async function getRuntimeEnvDefaults() {
+  let parsedEnv = {};
+  try {
+    const res = await fetch(chrome.runtime.getURL('.env'));
+    if (res.ok) {
+      const text = await res.text();
+      parsedEnv = parseEnvString(text);
+    }
+  } catch (e) {}
+
+  const staticEnv = (typeof self !== 'undefined' && self.ENV_CONFIG) ? self.ENV_CONFIG : {};
+
+  return {
+    provider: parsedEnv.SWAYAM_PROVIDER || staticEnv.provider || 'groq',
+    baseUrl: parsedEnv.SWAYAM_BASE_URL || staticEnv.baseUrl || 'https://api.groq.com/openai/v1',
+    apiKey: parsedEnv.SWAYAM_API_KEY || staticEnv.apiKey || '',
+    model: parsedEnv.SWAYAM_MODEL || staticEnv.model || 'llama-3.3-70b-versatile',
+    temperature: parsedEnv.SWAYAM_TEMPERATURE ? parseFloat(parsedEnv.SWAYAM_TEMPERATURE) : (staticEnv.temperature || 0.1),
+    humanPacing: parsedEnv.SWAYAM_HUMAN_PACING !== undefined ? parsedEnv.SWAYAM_HUMAN_PACING === 'true' : (staticEnv.humanPacing !== false),
+    stealthMode: parsedEnv.SWAYAM_STEALTH_MODE !== undefined ? parsedEnv.SWAYAM_STEALTH_MODE === 'true' : (staticEnv.stealthMode === true),
+    autoScroll: parsedEnv.SWAYAM_AUTO_SCROLL !== undefined ? parsedEnv.SWAYAM_AUTO_SCROLL === 'true' : (staticEnv.autoScroll !== false),
+    bypassRestrictions: parsedEnv.SWAYAM_BYPASS_RESTRICTIONS !== undefined ? parsedEnv.SWAYAM_BYPASS_RESTRICTIONS === 'true' : (staticEnv.bypassRestrictions !== false),
+    autoSelect: parsedEnv.SWAYAM_AUTO_SELECT !== undefined ? parsedEnv.SWAYAM_AUTO_SELECT === 'true' : (staticEnv.autoSelect !== false),
+    highlightOnly: parsedEnv.SWAYAM_HIGHLIGHT_ONLY !== undefined ? parsedEnv.SWAYAM_HIGHLIGHT_ONLY === 'true' : (staticEnv.highlightOnly === true),
+    showReasoning: parsedEnv.SWAYAM_SHOW_REASONING !== undefined ? parsedEnv.SWAYAM_SHOW_REASONING === 'true' : (staticEnv.showReasoning !== false),
+    autoSubmit: parsedEnv.SWAYAM_AUTO_SUBMIT !== undefined ? parsedEnv.SWAYAM_AUTO_SUBMIT === 'true' : (staticEnv.autoSubmit === true),
+    autoSubmitDelay: parsedEnv.SWAYAM_AUTO_SUBMIT_DELAY ? parseInt(parsedEnv.SWAYAM_AUTO_SUBMIT_DELAY, 10) : (staticEnv.autoSubmitDelay || 5000),
+    customPrompt: `You are an academic subject matter expert solving multiple choice questions (MCQs) and multiple select questions (MSQs) from the SWAYAM / NPTEL portal.
 Analyze each question step-by-step with domain precision.
 For single-choice MCQs, choose the single best option index.
 For multi-select MSQs, select all correct option indices.
 Output must be valid JSON adhering strictly to the requested schema.`
-};
+  };
+}
 
-// Track detected questions across frames for each tab
 const tabFramesMap = new Map();
 
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onInstalled) {
   chrome.runtime.onInstalled.addListener(async () => {
+    const envDefaults = await getRuntimeEnvDefaults();
     const existing = await chrome.storage.local.get(null);
-    const updated = { ...DEFAULT_CONFIG, ...existing };
-    // If user provided a new key in .env / config.js and existing storage has empty key, use the env key
-    if (DEFAULT_CONFIG.apiKey && !existing.apiKey) {
-      updated.apiKey = DEFAULT_CONFIG.apiKey;
+    const updated = { ...envDefaults, ...existing };
+    if (envDefaults.apiKey && (!existing.apiKey || existing.apiKey === '')) {
+      updated.apiKey = envDefaults.apiKey;
     }
     await chrome.storage.local.set(updated);
   });
@@ -149,8 +176,13 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
     }
 
     if (request.action === 'GET_CONFIG') {
-      chrome.storage.local.get(null).then((config) => {
-        sendResponse({ success: true, config: { ...DEFAULT_CONFIG, ...config } });
+      getRuntimeEnvDefaults().then(async (envDefaults) => {
+        const stored = await chrome.storage.local.get(null);
+        const merged = { ...envDefaults, ...stored };
+        if (!stored.apiKey && envDefaults.apiKey) {
+          merged.apiKey = envDefaults.apiKey;
+        }
+        sendResponse({ success: true, config: merged });
       });
       return true;
     }
@@ -167,8 +199,9 @@ function cleanBaseUrl(url) {
 }
 
 async function handleTestConnection(customConfig) {
+  const envDefaults = await getRuntimeEnvDefaults();
   const stored = typeof chrome !== 'undefined' && chrome.storage ? await chrome.storage.local.get(null) : {};
-  const config = { ...DEFAULT_CONFIG, ...stored, ...customConfig };
+  const config = { ...envDefaults, ...stored, ...customConfig };
 
   if (!config.apiKey && !config.baseUrl.includes('localhost') && !config.baseUrl.includes('127.0.0.1')) {
     throw new Error('API key is required.');
@@ -272,8 +305,9 @@ async function handleSolveAssignment(questions, overrideConfig) {
     throw new Error('No questions found on the page.');
   }
 
+  const envDefaults = await getRuntimeEnvDefaults();
   const stored = typeof chrome !== 'undefined' && chrome.storage ? await chrome.storage.local.get(null) : {};
-  const config = { ...DEFAULT_CONFIG, ...stored, ...overrideConfig };
+  const config = { ...envDefaults, ...stored, ...overrideConfig };
 
   if (!config.apiKey && !config.baseUrl.includes('localhost') && !config.baseUrl.includes('127.0.0.1')) {
     throw new Error('API key is not configured.');
@@ -292,7 +326,7 @@ async function handleSolveAssignment(questions, overrideConfig) {
   const payload = {
     model: config.model || 'gpt-4o-mini',
     messages: [
-      { role: 'system', content: config.customPrompt || DEFAULT_CONFIG.customPrompt },
+      { role: 'system', content: config.customPrompt || envDefaults.customPrompt },
       { role: 'user', content: userPrompt }
     ],
     temperature: typeof config.temperature === 'number' ? config.temperature : 0.1,
@@ -464,7 +498,6 @@ if (typeof module !== 'undefined' && module.exports) {
     cleanBaseUrl,
     buildPromptForQuestions,
     extractAndParseJson,
-    normalizeSolutions,
-    DEFAULT_CONFIG
+    normalizeSolutions
   };
 }

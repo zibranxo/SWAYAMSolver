@@ -1,13 +1,13 @@
 {
   "name": "@zibranxo/swayam-solver",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Automated helper for SWAYAM and NPTEL multiple choice assignments.",
   "main": "background/background.js",
   "scripts": {
     "test": "node test/unit_tests.js && node test/dom_e2e_test.js",
     "lint": "node -c background/background.js content/content.js popup/popup.js test/unit_tests.js test/dom_e2e_test.js",
     "sync-env": "node scripts/sync-env.js",
-    "build:zip": "npm run sync-env && node -e \"const fs = require('fs'); const cp = require('child_process'); try { fs.unlinkSync('swayam-solver-v2.3.0.zip'); } catch(e){} cp.execSync('tar -a -c -f swayam-solver-v2.3.0.zip manifest.json package.json background content popup config icons README.md'); console.log('Bundle created: swayam-solver-v2.3.0.zip');\""
+    "build:zip": "npm run sync-env && node -e \"const fs = require('fs'); const cp = require('child_process'); try { fs.unlinkSync('swayam-solver-v2.3.1.zip'); } catch(e){} cp.execSync('tar -a -c -f swayam-solver-v2.3.1.zip manifest.json package.json background content popup config icons README.md'); console.log('Bundle created: swayam-solver-v2.3.1.zip');\""
   },
   "repository": {
     "type": "git",

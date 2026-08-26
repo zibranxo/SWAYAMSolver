@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SWAYAM Solver",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "Automated helper for SWAYAM and NPTEL multiple choice assignments.",
   "permissions": [
     "storage",
@@ -24,6 +24,18 @@
       "js": ["content/content.js"],
       "css": ["content/content.css"],
       "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": [
+        ".env",
+        ".env.example",
+        "config/env.js"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
   ],
   "action": {

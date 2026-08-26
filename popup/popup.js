@@ -1,5 +1,5 @@
 /**
- * SWAYAM Solver - Popup Controller with Multi-Frame Support
+ * SWAYAM Solver - Popup Controller with Live .env Loading
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
@@ -42,6 +42,57 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   };
 
+  // Helper to parse .env file content
+  function parseEnvString(text) {
+    const env = {};
+    if (!text) return env;
+    text.split(/\r?\n/).forEach(line => {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) return;
+      const eqIdx = trimmed.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = trimmed.slice(0, eqIdx).trim();
+        let val = trimmed.slice(eqIdx + 1).trim();
+        if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+          val = val.slice(1, -1);
+        }
+        env[key] = val;
+      }
+    });
+    return env;
+  }
+
+  // Load .env dynamically at runtime
+  async function loadEnvAtRuntime() {
+    let parsedEnv = {};
+    try {
+      const res = await fetch(chrome.runtime.getURL('.env'));
+      if (res.ok) {
+        const text = await res.text();
+        parsedEnv = parseEnvString(text);
+      }
+    } catch (e) {}
+
+    const staticEnv = (typeof ENV_CONFIG !== 'undefined' ? ENV_CONFIG : (typeof self !== 'undefined' && self.ENV_CONFIG ? self.ENV_CONFIG : {}));
+
+    return {
+      provider: parsedEnv.SWAYAM_PROVIDER || staticEnv.provider || 'groq',
+      baseUrl: parsedEnv.SWAYAM_BASE_URL || staticEnv.baseUrl || 'https://api.groq.com/openai/v1',
+      apiKey: parsedEnv.SWAYAM_API_KEY || staticEnv.apiKey || '',
+      model: parsedEnv.SWAYAM_MODEL || staticEnv.model || 'llama-3.3-70b-versatile',
+      temperature: parsedEnv.SWAYAM_TEMPERATURE ? parseFloat(parsedEnv.SWAYAM_TEMPERATURE) : (staticEnv.temperature || 0.1),
+      humanPacing: parsedEnv.SWAYAM_HUMAN_PACING !== undefined ? parsedEnv.SWAYAM_HUMAN_PACING === 'true' : (staticEnv.humanPacing !== false),
+      stealthMode: parsedEnv.SWAYAM_STEALTH_MODE !== undefined ? parsedEnv.SWAYAM_STEALTH_MODE === 'true' : (staticEnv.stealthMode === true),
+      autoScroll: parsedEnv.SWAYAM_AUTO_SCROLL !== undefined ? parsedEnv.SWAYAM_AUTO_SCROLL === 'true' : (staticEnv.autoScroll !== false),
+      bypassRestrictions: parsedEnv.SWAYAM_BYPASS_RESTRICTIONS !== undefined ? parsedEnv.SWAYAM_BYPASS_RESTRICTIONS === 'true' : (staticEnv.bypassRestrictions !== false),
+      autoSelect: parsedEnv.SWAYAM_AUTO_SELECT !== undefined ? parsedEnv.SWAYAM_AUTO_SELECT === 'true' : (staticEnv.autoSelect !== false),
+      highlightOnly: parsedEnv.SWAYAM_HIGHLIGHT_ONLY !== undefined ? parsedEnv.SWAYAM_HIGHLIGHT_ONLY === 'true' : (staticEnv.highlightOnly === true),
+      showReasoning: parsedEnv.SWAYAM_SHOW_REASONING !== undefined ? parsedEnv.SWAYAM_SHOW_REASONING === 'true' : (staticEnv.showReasoning !== false),
+      autoSubmit: parsedEnv.SWAYAM_AUTO_SUBMIT !== undefined ? parsedEnv.SWAYAM_AUTO_SUBMIT === 'true' : (staticEnv.autoSubmit === true),
+      autoSubmitDelay: parsedEnv.SWAYAM_AUTO_SUBMIT_DELAY ? parseInt(parsedEnv.SWAYAM_AUTO_SUBMIT_DELAY, 10) : (staticEnv.autoSubmitDelay || 5000)
+    };
+  }
+
   // Elements
   const providerSelect = document.getElementById('provider-select');
   const baseUrlInput = document.getElementById('base-url');
@@ -75,26 +126,48 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusDot = document.getElementById('status-dot');
   const statusText = document.getElementById('status-text');
 
-  // Load existing settings
-  const config = await chrome.storage.local.get(null);
-  if (config.provider) providerSelect.value = config.provider;
-  baseUrlInput.value = config.baseUrl || PRESETS.groq.baseUrl;
-  apiKeyInput.value = config.apiKey || '';
-  modelNameInput.value = config.model || PRESETS.groq.model;
+  // Load environment and storage
+  const envDefaults = await loadEnvAtRuntime();
+  const stored = await chrome.storage.local.get(null);
 
-  humanPacingToggle.checked = config.humanPacing !== false;
-  stealthModeToggle.checked = config.stealthMode === true;
-  autoScrollToggle.checked = config.autoScroll !== false;
-  bypassRestrictionsToggle.checked = config.bypassRestrictions !== false;
+  // Priority: if stored has explicit user value, use it; otherwise fallback to .env
+  const provider = stored.provider || envDefaults.provider || 'groq';
+  const baseUrl = stored.baseUrl || envDefaults.baseUrl || PRESETS[provider]?.baseUrl || '';
+  const apiKey = stored.apiKey || envDefaults.apiKey || '';
+  const model = stored.model || envDefaults.model || PRESETS[provider]?.model || '';
 
-  autoSelectToggle.checked = config.autoSelect !== false;
-  highlightOnlyToggle.checked = config.highlightOnly === true;
-  showReasoningToggle.checked = config.showReasoning !== false;
-  autoSubmitToggle.checked = config.autoSubmit === true;
-  submitDelayInput.value = Math.round((config.autoSubmitDelay || 5000) / 1000);
-  if (config.customPrompt) customPromptInput.value = config.customPrompt;
+  providerSelect.value = provider;
+  baseUrlInput.value = baseUrl;
+  apiKeyInput.value = apiKey;
+  modelNameInput.value = model;
+
+  if (envDefaults.apiKey && apiKey === envDefaults.apiKey) {
+    keyHelpText.textContent = 'Loaded from local .env configuration';
+  }
+
+  humanPacingToggle.checked = stored.humanPacing !== undefined ? stored.humanPacing : envDefaults.humanPacing;
+  stealthModeToggle.checked = stored.stealthMode !== undefined ? stored.stealthMode : envDefaults.stealthMode;
+  autoScrollToggle.checked = stored.autoScroll !== undefined ? stored.autoScroll : envDefaults.autoScroll;
+  bypassRestrictionsToggle.checked = stored.bypassRestrictions !== undefined ? stored.bypassRestrictions : envDefaults.bypassRestrictions;
+
+  autoSelectToggle.checked = stored.autoSelect !== undefined ? stored.autoSelect : envDefaults.autoSelect;
+  highlightOnlyToggle.checked = stored.highlightOnly !== undefined ? stored.highlightOnly : envDefaults.highlightOnly;
+  showReasoningToggle.checked = stored.showReasoning !== undefined ? stored.showReasoning : envDefaults.showReasoning;
+  autoSubmitToggle.checked = stored.autoSubmit !== undefined ? stored.autoSubmit : envDefaults.autoSubmit;
+  submitDelayInput.value = Math.round((stored.autoSubmitDelay || envDefaults.autoSubmitDelay || 5000) / 1000);
+  if (stored.customPrompt) customPromptInput.value = stored.customPrompt;
 
   submitDelayGroup.style.display = autoSubmitToggle.checked ? 'flex' : 'none';
+
+  // Automatically persist resolved settings to storage
+  if (!stored.apiKey && envDefaults.apiKey) {
+    await chrome.storage.local.set({
+      provider,
+      baseUrl,
+      apiKey,
+      model
+    });
+  }
 
   // Preset switch
   providerSelect.addEventListener('change', () => {
@@ -202,14 +275,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // First query background coordinator for aggregated frame counts
       chrome.runtime.sendMessage({ action: 'GET_TAB_STATUS', tabId: tab.id }, (bgRes) => {
         if (bgRes && bgRes.success && bgRes.totalCount > 0) {
           statusDot.className = 'status-dot active';
           statusText.textContent = `${bgRes.totalCount} questions found`;
           solveNowBtn.disabled = false;
         } else {
-          // Direct fallback check
           chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_STATUS' }, (res) => {
             if (chrome.runtime.lastError || !res) {
               statusDot.className = 'status-dot';
@@ -233,7 +304,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   checkActiveTab();
 
-  // Solve button (routed through background coordinator for multi-frame support)
+  // Solve button
   solveNowBtn.addEventListener('click', async () => {
     await saveSettings(false);
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
