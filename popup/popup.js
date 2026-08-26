@@ -1,49 +1,48 @@
 /**
- * SWAYAMSolver - Popup Logic & Settings Controller
+ * SWAYAM Solver - Popup Controller
  */
 
 document.addEventListener('DOMContentLoaded', async () => {
-  // Provider Presets
   const PRESETS = {
     groq: {
       baseUrl: 'https://api.groq.com/openai/v1',
       model: 'llama-3.3-70b-versatile',
       keyPlaceholder: 'gsk_...',
-      keyHelp: 'Free high-speed tier available at console.groq.com'
+      keyHelp: 'API key from console.groq.com'
     },
     openai: {
       baseUrl: 'https://api.openai.com/v1',
       model: 'gpt-4o-mini',
       keyPlaceholder: 'sk-proj-...',
-      keyHelp: 'OpenAI API key from platform.openai.com'
+      keyHelp: 'API key from platform.openai.com'
     },
     openrouter: {
       baseUrl: 'https://openrouter.ai/api/v1',
       model: 'meta-llama/llama-3.3-70b-instruct:free',
       keyPlaceholder: 'sk-or-v1-...',
-      keyHelp: 'OpenRouter API key from openrouter.ai'
+      keyHelp: 'API key from openrouter.ai'
     },
     deepseek: {
       baseUrl: 'https://api.deepseek.com/v1',
       model: 'deepseek-chat',
       keyPlaceholder: 'sk-...',
-      keyHelp: 'DeepSeek API key from platform.deepseek.com'
+      keyHelp: 'API key from platform.deepseek.com'
     },
     ollama: {
       baseUrl: 'http://localhost:11434/v1',
       model: 'llama3.1:latest',
-      keyPlaceholder: 'No key needed for local Ollama',
-      keyHelp: 'Make sure Ollama is running locally with OLLAMA_ORIGINS="*"'
+      keyPlaceholder: 'Local endpoint (no key required)',
+      keyHelp: 'Requires local Ollama instance with OLLAMA_ORIGINS="*"'
     },
     custom: {
       baseUrl: '',
       model: '',
-      keyPlaceholder: 'API Key',
-      keyHelp: 'Enter your custom OpenAI-compatible credentials'
+      keyPlaceholder: 'API key',
+      keyHelp: 'Enter OpenAI-compatible endpoint credentials'
     }
   };
 
-  // DOM Elements
+  // Elements
   const providerSelect = document.getElementById('provider-select');
   const baseUrlInput = document.getElementById('base-url');
   const apiKeyInput = document.getElementById('api-key');
@@ -69,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const statusDot = document.getElementById('status-dot');
   const statusText = document.getElementById('status-text');
 
-  // 1. Load Saved Settings
+  // Load existing settings
   const config = await chrome.storage.local.get(null);
   if (config.provider) providerSelect.value = config.provider;
   baseUrlInput.value = config.baseUrl || PRESETS.groq.baseUrl;
@@ -85,7 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   submitDelayGroup.style.display = autoSubmitToggle.checked ? 'flex' : 'none';
 
-  // 2. Provider Preset Switcher
+  // Preset switch
   providerSelect.addEventListener('change', () => {
     const selected = providerSelect.value;
     const preset = PRESETS[selected];
@@ -97,36 +96,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // 3. Toggle Key Visibility
+  // Key visibility toggle
   toggleKeyBtn.addEventListener('click', () => {
     if (apiKeyInput.type === 'password') {
       apiKeyInput.type = 'text';
-      toggleKeyBtn.textContent = '🔒';
+      toggleKeyBtn.textContent = 'Hide';
     } else {
       apiKeyInput.type = 'password';
-      toggleKeyBtn.textContent = '👁';
+      toggleKeyBtn.textContent = 'Show';
     }
   });
 
-  // 4. Auto-submit delay field toggle
   autoSubmitToggle.addEventListener('change', () => {
     submitDelayGroup.style.display = autoSubmitToggle.checked ? 'flex' : 'none';
   });
 
-  // 5. Highlight-only vs Auto-select mutual handling
   highlightOnlyToggle.addEventListener('change', () => {
-    if (highlightOnlyToggle.checked) {
-      autoSelectToggle.checked = false;
-    }
+    if (highlightOnlyToggle.checked) autoSelectToggle.checked = false;
   });
   autoSelectToggle.addEventListener('change', () => {
-    if (autoSelectToggle.checked) {
-      highlightOnlyToggle.checked = false;
-    }
+    if (autoSelectToggle.checked) highlightOnlyToggle.checked = false;
   });
 
-  // 6. Save Settings Function
-  async function saveSettings(showNotification = true) {
+  // Save settings
+  async function saveSettings(showFeedback = true) {
     const newSettings = {
       provider: providerSelect.value,
       baseUrl: baseUrlInput.value.trim(),
@@ -142,17 +135,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     await chrome.storage.local.set(newSettings);
 
-    if (showNotification) {
-      saveStatusText.textContent = '✓ Settings saved successfully!';
+    if (showFeedback) {
+      saveStatusText.textContent = 'Configuration saved';
       setTimeout(() => {
         saveStatusText.textContent = '';
-      }, 2500);
+      }, 2000);
     }
   }
 
   saveSettingsBtn.addEventListener('click', () => saveSettings(true));
 
-  // 7. Test Connection
+  // Connection test
   testConnBtn.addEventListener('click', async () => {
     testResultBadge.className = 'badge loading';
     testResultBadge.textContent = 'Testing...';
@@ -171,20 +164,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       if (response && response.success) {
         testResultBadge.className = 'badge success';
-        testResultBadge.textContent = '✓ Connected';
+        testResultBadge.textContent = 'Connected';
       } else {
         testResultBadge.className = 'badge error';
-        testResultBadge.textContent = '✕ Error';
-        alert(`Connection Failed:\n${response.error || 'Unknown error'}`);
+        testResultBadge.textContent = 'Failed';
+        alert(`Connection error:\n${response.error || 'Unknown error'}`);
       }
     } catch (err) {
       testResultBadge.className = 'badge error';
-      testResultBadge.textContent = '✕ Error';
-      alert(`Connection Error:\n${err.message}`);
+      testResultBadge.textContent = 'Failed';
+      alert(`Connection error:\n${err.message}`);
     }
   });
 
-  // 8. Active Tab Check & Status Update
+  // Check active tab status
   async function checkActiveTab() {
     try {
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -195,26 +188,26 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_STATUS' }, (res) => {
         if (chrome.runtime.lastError || !res) {
-          statusDot.className = 'dot';
-          statusText.textContent = 'Open an assignment page';
-          solveNowBtn.disabled = false; // still allow user to attempt
+          statusDot.className = 'status-dot';
+          statusText.textContent = 'No assignment open';
+          solveNowBtn.disabled = false;
         } else if (res.success && res.questionCount > 0) {
-          statusDot.className = 'dot active';
-          statusText.textContent = `Ready (${res.questionCount} questions detected)`;
+          statusDot.className = 'status-dot active';
+          statusText.textContent = `${res.questionCount} questions found`;
           solveNowBtn.disabled = false;
         } else {
-          statusDot.className = 'dot warning';
-          statusText.textContent = 'No questions detected on this page';
+          statusDot.className = 'status-dot warning';
+          statusText.textContent = 'No questions detected';
         }
       });
     } catch (e) {
-      console.warn('[SWAYAMSolver] Tab check failed:', e);
+      console.warn('Tab check failed:', e);
     }
   }
 
   checkActiveTab();
 
-  // 9. Trigger Solve from Popup
+  // Solve button
   solveNowBtn.addEventListener('click', async () => {
     await saveSettings(false);
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -225,14 +218,14 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     chrome.tabs.sendMessage(tab.id, { action: 'TRIGGER_SOLVE' }, (res) => {
       solveNowBtn.disabled = false;
-      solveNowBtn.innerHTML = '<span class="btn-icon">⚡</span> Solve Assignment';
+      solveNowBtn.textContent = 'Solve Current Assignment';
       if (chrome.runtime.lastError) {
-        alert('Could not trigger solver. Please refresh the Swayam assignment tab and try again.');
+        alert('Could not trigger solver. Please refresh the assignment tab and try again.');
       }
     });
   });
 
-  // 10. Clear Page Highlights
+  // Clear button
   clearPageBtn.addEventListener('click', async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (tab && tab.id) {

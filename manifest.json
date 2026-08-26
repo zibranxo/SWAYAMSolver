@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "SWAYAMSolver - AI Assignment Assistant",
+  "name": "SWAYAM Solver",
   "version": "2.0.0",
-  "description": "Autonomous AI solver for SWAYAM & NPTEL MCQ/MSQ assignments using any OpenAI-compatible LLM.",
+  "description": "Automated helper for SWAYAM and NPTEL multiple choice assignments.",
   "permissions": [
     "storage",
     "activeTab"
@@ -35,7 +35,7 @@
   ],
   "action": {
     "default_popup": "popup/popup.html",
-    "default_title": "SWAYAMSolver Settings & Controls",
+    "default_title": "SWAYAM Solver",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",

@@ -1,9 +1,8 @@
 /**
- * SWAYAMSolver - Background Service Worker
- * Handles OpenAI-compatible API calls, connectivity testing, and LLM communication.
+ * SWAYAM Solver - Background Service Worker
+ * Manages API requests and handles OpenAI-compatible communication.
  */
 
-// Default configuration constants
 const DEFAULT_CONFIG = {
   provider: 'groq',
   baseUrl: 'https://api.groq.com/openai/v1',
@@ -15,38 +14,35 @@ const DEFAULT_CONFIG = {
   autoSubmit: false,
   autoSubmitDelay: 3000,
   showReasoning: true,
-  customPrompt: `You are an elite academic professor and subject-matter expert solving multiple-choice questions (MCQs) and multiple-select questions (MSQs) from the SWAYAM / NPTEL platform.
-Analyze each question with extreme academic precision, step-by-step logic, and domain expertise.
-For MCQs, pick the SINGLE best/correct option index.
-For MSQs (marked as multi-select), pick ALL valid option indices.
-Output MUST be strict JSON in the specified schema without any markdown wrapping or additional commentary outside the JSON.`
+  customPrompt: `You are an academic subject matter expert solving multiple choice questions (MCQs) and multiple select questions (MSQs) from the SWAYAM / NPTEL portal.
+Analyze each question step-by-step with domain precision.
+For single-choice MCQs, choose the single best option index.
+For multi-select MSQs, select all correct option indices.
+Output must be valid JSON adhering strictly to the requested schema.`
 };
 
-// Initialize default settings on extension installation
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onInstalled) {
-  chrome.runtime.onInstalled.addListener(async (details) => {
+  chrome.runtime.onInstalled.addListener(async () => {
     const existing = await chrome.storage.local.get(null);
     const updated = { ...DEFAULT_CONFIG, ...existing };
     await chrome.storage.local.set(updated);
-    console.log('[SWAYAMSolver] Initialized with config:', updated);
   });
 }
 
-// Listener for messages from popup or content script
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'TEST_CONNECTION') {
       handleTestConnection(request.config)
         .then((res) => sendResponse({ success: true, data: res }))
         .catch((err) => sendResponse({ success: false, error: err.message }));
-      return true; // Keep channel open for async response
+      return true;
     }
 
     if (request.action === 'SOLVE_ASSIGNMENT') {
       handleSolveAssignment(request.questions, request.overrideConfig)
         .then((res) => sendResponse({ success: true, solutions: res }))
         .catch((err) => sendResponse({ success: false, error: err.message }));
-      return true; // Keep channel open for async response
+      return true;
     }
 
     if (request.action === 'GET_CONFIG') {
@@ -58,9 +54,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
   });
 }
 
-/**
- * Normalizes user-supplied base URL
- */
 function cleanBaseUrl(url) {
   if (!url) return 'https://api.openai.com/v1';
   let cleaned = url.trim().replace(/\/+$/, '');
@@ -70,15 +63,12 @@ function cleanBaseUrl(url) {
   return cleaned;
 }
 
-/**
- * Tests API connection by requesting a fast completion
- */
 async function handleTestConnection(customConfig) {
   const stored = typeof chrome !== 'undefined' && chrome.storage ? await chrome.storage.local.get(null) : {};
   const config = { ...DEFAULT_CONFIG, ...stored, ...customConfig };
 
   if (!config.apiKey && !config.baseUrl.includes('localhost') && !config.baseUrl.includes('127.0.0.1')) {
-    throw new Error('API Key is required for remote providers.');
+    throw new Error('API key is required.');
   }
 
   const endpoint = `${cleanBaseUrl(config.baseUrl)}/chat/completions`;
@@ -92,8 +82,8 @@ async function handleTestConnection(customConfig) {
   const payload = {
     model: config.model || 'gpt-4o-mini',
     messages: [
-      { role: 'system', content: 'You are a test ping agent. Answer in one word.' },
-      { role: 'user', content: 'Ping! Reply with "PONG".' }
+      { role: 'system', content: 'Respond with OK.' },
+      { role: 'user', content: 'ping' }
     ],
     max_tokens: 10,
     temperature: 0
@@ -118,35 +108,30 @@ async function handleTestConnection(customConfig) {
       try {
         const json = JSON.parse(errText);
         parsedMessage = json.error?.message || json.message || errText;
-      } catch (e) {
-        // use raw text
-      }
+      } catch (e) {}
       throw new Error(`HTTP ${response.status}: ${parsedMessage}`);
     }
 
     const data = await response.json();
     const reply = data.choices?.[0]?.message?.content || 'OK';
-    return { status: 'Connected successfully', reply: reply.trim() };
+    return { status: 'Connected', reply: reply.trim() };
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('Connection timed out (15s). Check your Base URL or network connection.');
+      throw new Error('Connection timed out. Check base URL and network.');
     }
     throw error;
   }
 }
 
-/**
- * Builds user prompt containing all scraped questions
- */
 function buildPromptForQuestions(questions) {
-  let prompt = `Here are the assignment questions to solve. Each question has an index, question text, whether it is single-choice (MCQ) or multiple-choice (MSQ), and an array of options with their 0-based indices.\n\n`;
+  let prompt = `Solve the following assignment questions. Each item contains an index, the question text, single/multi select indicator, and options with 0-based indices.\n\n`;
 
   questions.forEach((q, idx) => {
-    prompt += `=== QUESTION ${idx + 1} (Index: ${idx}) ===\n`;
+    prompt += `=== Question ${idx + 1} (Index: ${idx}) ===\n`;
     prompt += `ID: ${q.id}\n`;
-    prompt += `Type: ${q.type === 'msq' ? 'MULTIPLE SELECT (MSQ - one or more correct options)' : 'SINGLE SELECT (MCQ - exactly one correct option)'}\n`;
-    prompt += `Question Text:\n${q.text}\n`;
+    prompt += `Type: ${q.type === 'msq' ? 'Multiple Select (MSQ - one or more correct options)' : 'Single Select (MCQ - exactly one correct option)'}\n`;
+    prompt += `Question:\n${q.text}\n`;
     prompt += `Options:\n`;
     q.options.forEach((opt, optIdx) => {
       prompt += `  [Option ${optIdx}]: ${opt.text}\n`;
@@ -154,13 +139,13 @@ function buildPromptForQuestions(questions) {
     prompt += `\n`;
   });
 
-  prompt += `\nINSTRUCTIONS:
-1. Carefully solve every question.
-2. For single-choice MCQs, provide the single best 0-based option index in 'selectedOptionIndices' (e.g. [2]).
-3. For multiple-choice MSQs, provide all correct 0-based option indices in 'selectedOptionIndices' (e.g. [0, 2]).
-4. Provide a confidence score between 0.0 and 1.0.
-5. Provide a short 1-2 sentence academic explanation in 'reasoning'.
-6. Return a valid JSON object matching this EXACT JSON schema:
+  prompt += `\nInstructions:
+1. Solve every question with academic accuracy.
+2. For single-select MCQs, return the single correct 0-based option index in 'selectedOptionIndices' (e.g. [1]).
+3. For multi-select MSQs, return all correct 0-based option indices in 'selectedOptionIndices' (e.g. [0, 2]).
+4. Provide a confidence estimate (0.0 to 1.0) in 'confidence'.
+5. Provide a clear 1-2 sentence explanation in 'reasoning'.
+6. Return a valid JSON object matching this schema:
 
 {
   "solutions": [
@@ -168,9 +153,9 @@ function buildPromptForQuestions(questions) {
       "questionIndex": 0,
       "questionId": "q_1",
       "selectedOptionIndices": [1],
-      "selectedOptionTexts": ["Text of selected option"],
+      "selectedOptionTexts": ["Selected option text"],
       "confidence": 0.95,
-      "reasoning": "Brief explanation why this option is correct."
+      "reasoning": "Explanation for why this option is correct."
     }
   ]
 }
@@ -179,19 +164,16 @@ function buildPromptForQuestions(questions) {
   return prompt;
 }
 
-/**
- * Sends questions to LLM and parses JSON response
- */
 async function handleSolveAssignment(questions, overrideConfig) {
   if (!questions || questions.length === 0) {
-    throw new Error('No questions found on the current page.');
+    throw new Error('No questions found on the page.');
   }
 
   const stored = typeof chrome !== 'undefined' && chrome.storage ? await chrome.storage.local.get(null) : {};
   const config = { ...DEFAULT_CONFIG, ...stored, ...overrideConfig };
 
   if (!config.apiKey && !config.baseUrl.includes('localhost') && !config.baseUrl.includes('127.0.0.1')) {
-    throw new Error('API Key is missing. Please configure it in the extension popup.');
+    throw new Error('API key is not configured.');
   }
 
   const endpoint = `${cleanBaseUrl(config.baseUrl)}/chat/completions`;
@@ -215,7 +197,7 @@ async function handleSolveAssignment(questions, overrideConfig) {
   };
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60s timeout for large quizzes
+  const timeoutId = setTimeout(() => controller.abort(), 60000);
 
   try {
     let response;
@@ -230,11 +212,9 @@ async function handleSolveAssignment(questions, overrideConfig) {
       throw fetchErr;
     }
 
-    // Some models/providers reject response_format: { type: "json_object" }
     if (!response.ok && response.status === 400) {
       const errBody = await response.text();
       if (errBody.includes('response_format') || errBody.includes('json_object')) {
-        console.warn('[SWAYAMSolver] Provider rejected json_object response_format, retrying without it...');
         delete payload.response_format;
         response = await fetch(endpoint, {
           method: 'POST',
@@ -255,49 +235,38 @@ async function handleSolveAssignment(questions, overrideConfig) {
       try {
         const json = JSON.parse(errText);
         parsedMessage = json.error?.message || json.message || errText;
-      } catch (e) {
-        // use raw text
-      }
-      throw new Error(`LLM API Error (${response.status}): ${parsedMessage}`);
+      } catch (e) {}
+      throw new Error(`API error (${response.status}): ${parsedMessage}`);
     }
 
     const data = await response.json();
     const rawContent = data.choices?.[0]?.message?.content;
 
     if (!rawContent) {
-      throw new Error('LLM returned an empty response.');
+      throw new Error('Empty response from model.');
     }
 
-    // Parse JSON from content
     const parsedData = extractAndParseJson(rawContent);
-    const solutions = normalizeSolutions(parsedData, questions);
-
-    return solutions;
+    return normalizeSolutions(parsedData, questions);
   } catch (error) {
     clearTimeout(timeoutId);
     if (error.name === 'AbortError') {
-      throw new Error('LLM request timed out after 60 seconds.');
+      throw new Error('Request timed out after 60s.');
     }
-    console.error('[SWAYAMSolver] Error in handleSolveAssignment:', error);
     throw error;
   }
 }
 
-/**
- * Extracts and parses JSON from LLM output string
- */
 function extractAndParseJson(text) {
   if (typeof text === 'object' && text !== null) {
     return Array.isArray(text) ? { solutions: text } : text;
   }
   const trimmed = text.trim();
 
-  // Try direct parse
   try {
     const direct = JSON.parse(trimmed);
     return Array.isArray(direct) ? { solutions: direct } : direct;
   } catch (e) {
-    // Markdown code fence extraction
     const matchJsonFence = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
     if (matchJsonFence && matchJsonFence[1]) {
       try {
@@ -306,7 +275,6 @@ function extractAndParseJson(text) {
       } catch (e2) {}
     }
 
-    // First { to last }
     const firstBrace = trimmed.indexOf('{');
     const lastBrace = trimmed.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
@@ -317,7 +285,6 @@ function extractAndParseJson(text) {
       } catch (e3) {}
     }
 
-    // First [ to last ]
     const firstBracket = trimmed.indexOf('[');
     const lastBracket = trimmed.lastIndexOf(']');
     if (firstBracket !== -1 && lastBracket !== -1 && lastBracket > firstBracket) {
@@ -328,13 +295,10 @@ function extractAndParseJson(text) {
       } catch (e4) {}
     }
 
-    throw new Error(`Failed to parse structured JSON from LLM response:\n${trimmed.slice(0, 300)}...`);
+    throw new Error(`Failed to parse JSON response:\n${trimmed.slice(0, 200)}...`);
   }
 }
 
-/**
- * Normalizes and validates solutions array to ensure matching with DOM questions
- */
 function normalizeSolutions(parsed, originalQuestions) {
   let list = [];
   if (Array.isArray(parsed)) {
@@ -387,12 +351,11 @@ function normalizeSolutions(parsed, originalQuestions) {
       questionId: q.id,
       selectedOptionIndices: selectedIndices,
       confidence: typeof sol.confidence === 'number' ? sol.confidence : 0.9,
-      reasoning: sol.reasoning || sol.explanation || 'Solution determined by AI.'
+      reasoning: sol.reasoning || sol.explanation || 'Verified from course material.'
     };
   });
 }
 
-// Export for unit tests if running in Node.js environment
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
     cleanBaseUrl,

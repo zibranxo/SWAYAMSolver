@@ -3,132 +3,144 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SWAYAMSolver</title>
+  <title>SWAYAM Solver</title>
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="popup-container">
+  <div class="container">
     <!-- Header -->
     <header class="header">
       <div class="brand">
-        <div class="logo">⚡</div>
+        <div class="logo">S</div>
         <div>
-          <h1 class="title">SWAYAM<span class="highlight">Solver</span></h1>
-          <p class="subtitle">AI Assignment Assistant v2.0</p>
+          <h1 class="title">SWAYAM Solver</h1>
+          <p class="subtitle">v2.0.0</p>
         </div>
+      </div>
+      <div class="header-status">
+        <span class="status-dot" id="status-dot"></span>
+        <span class="status-label" id="status-text">Checking tab...</span>
       </div>
     </header>
 
-    <!-- Page Status Card -->
-    <div class="card status-card">
-      <div class="status-indicator">
-        <span class="dot" id="status-dot"></span>
-        <span class="status-text" id="status-text">Detecting assignment...</span>
-      </div>
-      <div class="quick-actions">
-        <button id="solve-now-btn" class="btn btn-primary" title="Solve active assignment">
-          <span class="btn-icon">⚡</span> Solve Assignment
-        </button>
-        <button id="clear-page-btn" class="btn btn-secondary" title="Clear highlights">
-          ✕
-        </button>
-      </div>
+    <!-- Main Action Card -->
+    <div class="action-card">
+      <button id="solve-now-btn" class="btn btn-primary">
+        Solve Current Assignment
+      </button>
+      <button id="clear-page-btn" class="btn btn-ghost" title="Clear selections and highlights">
+        Clear
+      </button>
     </div>
 
-    <!-- Provider & API Config -->
+    <!-- Provider Configuration -->
     <section class="section">
-      <h2 class="section-title">LLM Provider Configuration</h2>
+      <div class="section-header">
+        <span class="section-title">Model Provider</span>
+      </div>
 
-      <div class="form-group">
-        <label for="provider-select">Provider Preset</label>
-        <select id="provider-select" class="form-control">
-          <option value="groq">Groq (Ultra-Fast & Free Tier)</option>
-          <option value="openai">OpenAI (Official)</option>
-          <option value="openrouter">OpenRouter (Multi-Model)</option>
-          <option value="deepseek">DeepSeek AI</option>
-          <option value="ollama">Local Ollama (localhost:11434)</option>
-          <option value="custom">Custom (OpenAI-Compatible)</option>
+      <div class="field">
+        <label for="provider-select">Preset</label>
+        <select id="provider-select" class="input select">
+          <option value="groq">Groq</option>
+          <option value="openai">OpenAI</option>
+          <option value="openrouter">OpenRouter</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="ollama">Local Ollama</option>
+          <option value="custom">Custom Endpoint</option>
         </select>
       </div>
 
-      <div class="form-group">
+      <div class="field">
         <label for="base-url">API Base URL</label>
-        <input type="text" id="base-url" class="form-control" placeholder="https://api.groq.com/openai/v1">
+        <input type="text" id="base-url" class="input" placeholder="https://api.groq.com/openai/v1" spellcheck="false">
       </div>
 
-      <div class="form-group">
+      <div class="field">
         <label for="api-key">API Key</label>
-        <div class="input-with-action">
-          <input type="password" id="api-key" class="form-control" placeholder="gsk_... or sk-...">
-          <button type="button" id="toggle-key-visibility" class="btn-icon-addon" title="Toggle visibility">👁</button>
+        <div class="input-addon-wrap">
+          <input type="password" id="api-key" class="input" placeholder="Enter API key" spellcheck="false">
+          <button type="button" id="toggle-key-visibility" class="addon-btn" title="Toggle visibility">Show</button>
         </div>
-        <small class="help-text" id="key-help">Stored locally in your browser.</small>
+        <span class="caption" id="key-help">Stored locally in chrome storage.</span>
       </div>
 
-      <div class="form-group">
+      <div class="field">
         <label for="model-name">Model Name</label>
-        <input type="text" id="model-name" class="form-control" placeholder="llama-3.3-70b-versatile">
+        <input type="text" id="model-name" class="input" placeholder="llama-3.3-70b-versatile" spellcheck="false">
       </div>
 
-      <div class="connection-test-row">
-        <button id="test-connection-btn" class="btn btn-outline">
-          <span class="btn-icon">🔌</span> Test Connection
+      <div class="test-row">
+        <button id="test-connection-btn" class="btn btn-secondary">
+          Test Connection
         </button>
-        <span id="test-result-badge" class="badge">Not tested</span>
+        <span id="test-result-badge" class="badge">Idle</span>
       </div>
     </section>
 
-    <!-- Preferences & Automation -->
-    <details class="details-section">
-      <summary class="details-summary">Automation & Preferences</summary>
-      <div class="details-content">
-        <div class="toggle-group">
-          <label class="toggle-label" for="auto-select-toggle">
-            <span>Auto-Click Answers</span>
-            <small>Programmatically select radio/checkbox options</small>
+    <!-- Options & Preferences -->
+    <details class="options-accordion">
+      <summary class="accordion-summary">Preferences & Automation</summary>
+      <div class="accordion-body">
+        <div class="switch-row">
+          <div class="switch-label">
+            <span>Auto-select answers</span>
+            <small>Click matched options automatically</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="auto-select-toggle" checked>
+            <span class="slider"></span>
           </label>
-          <input type="checkbox" id="auto-select-toggle" class="switch" checked>
         </div>
 
-        <div class="toggle-group">
-          <label class="toggle-label" for="highlight-only-toggle">
-            <span>Highlight Only Mode</span>
-            <small>Green highlight only, without clicking inputs</small>
+        <div class="switch-row">
+          <div class="switch-label">
+            <span>Highlight only</span>
+            <small>Outline options without clicking</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="highlight-only-toggle">
+            <span class="slider"></span>
           </label>
-          <input type="checkbox" id="highlight-only-toggle" class="switch">
         </div>
 
-        <div class="toggle-group">
-          <label class="toggle-label" for="show-reasoning-toggle">
-            <span>Show AI Rationale</span>
-            <small>Display explanation badges & tooltips on page</small>
+        <div class="switch-row">
+          <div class="switch-label">
+            <span>Show explanations</span>
+            <small>Display reasoning and confidence tooltips</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="show-reasoning-toggle" checked>
+            <span class="slider"></span>
           </label>
-          <input type="checkbox" id="show-reasoning-toggle" class="switch" checked>
         </div>
 
-        <div class="toggle-group">
-          <label class="toggle-label" for="auto-submit-toggle">
-            <span>Auto-Submit Assignment</span>
-            <small>Automatically click submit after solving</small>
+        <div class="switch-row">
+          <div class="switch-label">
+            <span>Auto-submit</span>
+            <small>Submit page once solved</small>
+          </div>
+          <label class="switch">
+            <input type="checkbox" id="auto-submit-toggle">
+            <span class="slider"></span>
           </label>
-          <input type="checkbox" id="auto-submit-toggle" class="switch">
         </div>
 
-        <div class="form-group" id="submit-delay-group" style="display: none;">
-          <label for="submit-delay">Submission Delay (seconds)</label>
-          <input type="number" id="submit-delay" class="form-control" min="1" max="30" value="3">
+        <div class="field" id="submit-delay-group" style="display: none;">
+          <label for="submit-delay">Submission delay (seconds)</label>
+          <input type="number" id="submit-delay" class="input" min="1" max="30" value="3">
         </div>
 
-        <div class="form-group">
-          <label for="custom-prompt">Custom System Prompt</label>
-          <textarea id="custom-prompt" class="form-control" rows="3" placeholder="Optional custom instructions for the LLM..."></textarea>
+        <div class="field">
+          <label for="custom-prompt">Custom instructions</label>
+          <textarea id="custom-prompt" class="input textarea" rows="3" placeholder="Optional instructions for the model..."></textarea>
         </div>
       </div>
     </details>
 
-    <!-- Footer Actions -->
+    <!-- Footer -->
     <footer class="footer">
-      <button id="save-settings-btn" class="btn btn-save">Save Settings</button>
+      <button id="save-settings-btn" class="btn btn-save">Save Configuration</button>
       <span id="save-status-text" class="save-status"></span>
     </footer>
   </div>

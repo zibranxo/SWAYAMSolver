@@ -1,6 +1,5 @@
 /**
- * SWAYAMSolver - Automated Unit & Integration Test Suite
- * Tests prompt construction, JSON parsing & recovery, text normalization, and DOM parsing.
+ * SWAYAM Solver - Unit Tests
  */
 
 const assert = require('assert');
@@ -8,11 +7,8 @@ const {
   cleanBaseUrl,
   buildPromptForQuestions,
   extractAndParseJson,
-  normalizeSolutions,
-  DEFAULT_CONFIG
+  normalizeSolutions
 } = require('../background/background.js');
-
-console.log('🧪 Starting SWAYAMSolver Test Suite...\n');
 
 let passedTests = 0;
 let totalTests = 0;
@@ -21,18 +17,15 @@ function test(name, fn) {
   totalTests++;
   try {
     fn();
-    console.log(`  ✅ PASS: ${name}`);
+    console.log(`[PASS] ${name}`);
     passedTests++;
   } catch (err) {
-    console.error(`  ❌ FAIL: ${name}`);
+    console.error(`[FAIL] ${name}`);
     console.error(err);
   }
 }
 
-// ==========================================
-// 1. Text Cleaning & Normalization Tests
-// ==========================================
-console.log('📦 [1] Text Normalization & String Sanitization Tests');
+console.log('--- 1. String Sanitization Tests ---');
 
 function cleanText(str) {
   if (!str) return '';
@@ -46,7 +39,7 @@ function cleanText(str) {
     .trim();
 }
 
-test('Removes (a), (A), [1], A., 1. prefixes from option strings', () => {
+test('Removes option prefixes like (a), (A), [1], 1., D)', () => {
   assert.strictEqual(cleanText('(A) Binary Search Tree'), 'Binary Search Tree');
   assert.strictEqual(cleanText('(b) Linear Search'), 'Linear Search');
   assert.strictEqual(cleanText('[1] Quick Sort'), 'Quick Sort');
@@ -54,59 +47,50 @@ test('Removes (a), (A), [1], A., 1. prefixes from option strings', () => {
   assert.strictEqual(cleanText('D) Dijkstra Algorithm'), 'Dijkstra Algorithm');
 });
 
-test('Normalizes special quotes, dashes, non-breaking spaces, and whitespace', () => {
+test('Normalizes quotes, non-breaking spaces, and whitespace', () => {
   const input = '“Smart”\u00A0quotes—and    tabs\t\nand dashes';
   assert.strictEqual(cleanText(input), '"Smart" quotes-and tabs and dashes');
 });
 
-// ==========================================
-// 2. Base URL Normalization Tests
-// ==========================================
-console.log('\n📦 [2] Base URL Cleaning Tests');
+console.log('\n--- 2. Base URL Normalization Tests ---');
 
-test('Properly cleans base URL and adds https protocol if missing', () => {
+test('Normalizes base URL and adds https protocol if missing', () => {
   assert.strictEqual(cleanBaseUrl('api.groq.com/openai/v1/'), 'https://api.groq.com/openai/v1');
   assert.strictEqual(cleanBaseUrl('https://api.openai.com/v1///'), 'https://api.openai.com/v1');
   assert.strictEqual(cleanBaseUrl('http://localhost:11434/v1'), 'http://localhost:11434/v1');
 });
 
-// ==========================================
-// 3. JSON Extraction & Error Recovery Tests
-// ==========================================
-console.log('\n📦 [3] LLM JSON Extraction & Fallback Recovery Tests');
+console.log('\n--- 3. JSON Extraction & Fallback Tests ---');
 
-test('Parses direct raw JSON string', () => {
+test('Parses raw JSON string', () => {
   const raw = '{"solutions":[{"questionIndex":0,"selectedOptionIndices":[1]}]}';
   const parsed = extractAndParseJson(raw);
   assert.strictEqual(parsed.solutions[0].selectedOptionIndices[0], 1);
 });
 
-test('Extracts JSON from markdown code fences (```json ... ```)', () => {
-  const markdown = 'Here is your solution:\n```json\n{\n  "solutions": [\n    {"questionIndex": 0, "selectedOptionIndices": [2], "reasoning": "O(log n) is correct."}\n  ]\n}\n```\nHope this helps!';
+test('Extracts JSON from markdown code blocks', () => {
+  const markdown = 'Here is the result:\n```json\n{\n  "solutions": [\n    {"questionIndex": 0, "selectedOptionIndices": [2], "reasoning": "Logarithmic time complexity."}\n  ]\n}\n```';
   const parsed = extractAndParseJson(markdown);
   assert.strictEqual(parsed.solutions[0].selectedOptionIndices[0], 2);
-  assert.strictEqual(parsed.solutions[0].reasoning, 'O(log n) is correct.');
+  assert.strictEqual(parsed.solutions[0].reasoning, 'Logarithmic time complexity.');
 });
 
-test('Recovers JSON embedded within conversational text without code fences', () => {
-  const text = 'Sure, here is the result: {"solutions":[{"questionIndex":0,"selectedOptionIndices":[3]}]} done.';
+test('Extracts JSON within regular text', () => {
+  const text = 'Response: {"solutions":[{"questionIndex":0,"selectedOptionIndices":[3]}]} finished.';
   const parsed = extractAndParseJson(text);
   assert.strictEqual(parsed.solutions[0].selectedOptionIndices[0], 3);
 });
 
-test('Recovers top-level array JSON format and wraps into solutions object', () => {
+test('Wraps array JSON format into solutions object', () => {
   const arrayJson = '[{"questionIndex":0,"selectedOptionIndices":[0,1]}]';
   const parsed = extractAndParseJson(arrayJson);
   assert(Array.isArray(parsed.solutions));
   assert.deepStrictEqual(parsed.solutions[0].selectedOptionIndices, [0, 1]);
 });
 
-// ==========================================
-// 4. Solution Normalization & Matching Tests
-// ==========================================
-console.log('\n📦 [4] Solution Normalization & Multi-Option Mapping Tests');
+console.log('\n--- 4. Solution Normalization Tests ---');
 
-test('Correctly maps standard solutions array to questions', () => {
+test('Maps standard solutions array to questions', () => {
   const questions = [
     { id: 'q1', type: 'mcq', text: 'Q1', options: [{ text: 'OptA' }, { text: 'OptB' }] },
     { id: 'q2', type: 'msq', text: 'Q2', options: [{ text: 'OptA' }, { text: 'OptB' }, { text: 'OptC' }] }
@@ -126,7 +110,7 @@ test('Correctly maps standard solutions array to questions', () => {
   assert.strictEqual(normalized[0].confidence, 0.99);
 });
 
-test('Handles alternative formats: answerIndex and option text fallback', () => {
+test('Handles answerIndex and option text fallback', () => {
   const questions = [
     { id: 'q1', type: 'mcq', text: 'Q1', options: [{ text: 'Python' }, { text: 'Java' }] },
     { id: 'q2', type: 'mcq', text: 'Q2', options: [{ text: 'O(1)' }, { text: 'O(N)' }] }
@@ -144,12 +128,9 @@ test('Handles alternative formats: answerIndex and option text fallback', () => 
   assert.deepStrictEqual(normalized[1].selectedOptionIndices, [0]);
 });
 
-// ==========================================
-// 5. Prompt Builder Formatting Tests
-// ==========================================
-console.log('\n📦 [5] LLM Prompt Generation Tests');
+console.log('\n--- 5. Prompt Generation Tests ---');
 
-test('Constructs structured prompt with indices, types, and options', () => {
+test('Formats prompt with indices, question types, and option items', () => {
   const questions = [
     {
       id: 'qt-1',
@@ -160,22 +141,15 @@ test('Constructs structured prompt with indices, types, and options', () => {
   ];
 
   const prompt = buildPromptForQuestions(questions);
-  assert(prompt.includes('=== QUESTION 1 (Index: 0) ==='));
-  assert(prompt.includes('Type: SINGLE SELECT (MCQ - exactly one correct option)'));
+  assert(prompt.includes('=== Question 1 (Index: 0) ==='));
+  assert(prompt.includes('Single Select (MCQ - exactly one correct option)'));
   assert(prompt.includes('[Option 1]: 4'));
 });
 
-// ==========================================
-// Test Summary
-// ==========================================
-console.log(`\n==========================================`);
-console.log(`📊 Test Results: ${passedTests} / ${totalTests} Passed (${Math.round((passedTests / totalTests) * 100)}%)`);
-console.log(`==========================================\n`);
+console.log(`\nTests completed: ${passedTests} / ${totalTests} passed.`);
 
 if (passedTests === totalTests) {
-  console.log('🎉 All automated unit tests passed successfully!');
   process.exit(0);
 } else {
-  console.error('❌ Some tests failed!');
   process.exit(1);
 }
