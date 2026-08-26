@@ -3,23 +3,29 @@
  * Manages API requests, multi-frame coordination, and OpenAI-compatible communication.
  */
 
+try {
+  importScripts('../config/env.js');
+} catch (e) {}
+
+const envDefaults = (typeof self !== 'undefined' && self.ENV_CONFIG) ? self.ENV_CONFIG : {};
+
 const DEFAULT_CONFIG = {
-  provider: 'groq',
-  baseUrl: 'https://api.groq.com/openai/v1',
-  apiKey: '',
-  model: 'llama-3.3-70b-versatile',
-  temperature: 0.1,
-  autoSelect: true,
-  highlightOnly: false,
-  stealthMode: false,
-  humanPacing: true,
+  provider: envDefaults.provider || 'groq',
+  baseUrl: envDefaults.baseUrl || 'https://api.groq.com/openai/v1',
+  apiKey: envDefaults.apiKey || '',
+  model: envDefaults.model || 'llama-3.3-70b-versatile',
+  temperature: typeof envDefaults.temperature === 'number' ? envDefaults.temperature : 0.1,
+  autoSelect: envDefaults.autoSelect !== false,
+  highlightOnly: envDefaults.highlightOnly === true,
+  stealthMode: envDefaults.stealthMode === true,
+  humanPacing: envDefaults.humanPacing !== false,
   minDelay: 1200,
   maxDelay: 3200,
-  autoScroll: true,
-  bypassRestrictions: true,
-  autoSubmit: false,
-  autoSubmitDelay: 5000,
-  showReasoning: true,
+  autoScroll: envDefaults.autoScroll !== false,
+  bypassRestrictions: envDefaults.bypassRestrictions !== false,
+  autoSubmit: envDefaults.autoSubmit === true,
+  autoSubmitDelay: envDefaults.autoSubmitDelay || 5000,
+  showReasoning: envDefaults.showReasoning !== false,
   customPrompt: `You are an academic subject matter expert solving multiple choice questions (MCQs) and multiple select questions (MSQs) from the SWAYAM / NPTEL portal.
 Analyze each question step-by-step with domain precision.
 For single-choice MCQs, choose the single best option index.
@@ -28,18 +34,20 @@ Output must be valid JSON adhering strictly to the requested schema.`
 };
 
 // Track detected questions across frames for each tab
-// Map: tabId -> Map(frameId -> { count, url, isTopFrame })
 const tabFramesMap = new Map();
 
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onInstalled) {
   chrome.runtime.onInstalled.addListener(async () => {
     const existing = await chrome.storage.local.get(null);
     const updated = { ...DEFAULT_CONFIG, ...existing };
+    // If user provided a new key in .env / config.js and existing storage has empty key, use the env key
+    if (DEFAULT_CONFIG.apiKey && !existing.apiKey) {
+      updated.apiKey = DEFAULT_CONFIG.apiKey;
+    }
     await chrome.storage.local.set(updated);
   });
 }
 
-// Clean up frame state when tab is closed or navigated
 if (typeof chrome !== 'undefined' && chrome.tabs) {
   chrome.tabs.onRemoved.addListener((tabId) => {
     tabFramesMap.delete(tabId);
@@ -53,7 +61,6 @@ if (typeof chrome !== 'undefined' && chrome.tabs) {
 
 if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage) {
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    // 1. Content script reporting question count for its frame
     if (request.action === 'REPORT_FRAME_QUESTIONS' && sender.tab) {
       const tabId = sender.tab.id;
       const frameId = sender.frameId || 0;
@@ -69,7 +76,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return false;
     }
 
-    // 2. Popup asking for tab question count
     if (request.action === 'GET_TAB_STATUS') {
       const tabId = request.tabId;
       let totalCount = 0;
@@ -92,7 +98,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return false;
     }
 
-    // 3. Popup triggering solve across all frames in a tab
     if (request.action === 'TRIGGER_SOLVE_TAB') {
       const tabId = request.tabId;
       const frames = tabFramesMap.get(tabId);
@@ -105,7 +110,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       }
 
       if (targetFrames.length === 0) {
-        // Fallback: Broadcast to all frames in the tab
         chrome.tabs.sendMessage(tabId, { action: 'TRIGGER_SOLVE' }, () => {
           if (chrome.runtime.lastError) {}
         });
@@ -121,7 +125,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return false;
     }
 
-    // 4. Clear highlights across tab frames
     if (request.action === 'CLEAR_TAB_HIGHLIGHTS') {
       const tabId = request.tabId;
       chrome.tabs.sendMessage(tabId, { action: 'CLEAR_HIGHLIGHTS' }, () => {
@@ -131,7 +134,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return false;
     }
 
-    // 5. Test API Connection
     if (request.action === 'TEST_CONNECTION') {
       handleTestConnection(request.config)
         .then((res) => sendResponse({ success: true, data: res }))
@@ -139,7 +141,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
-    // 6. Execute LLM Solve Assignment
     if (request.action === 'SOLVE_ASSIGNMENT') {
       handleSolveAssignment(request.questions, request.overrideConfig)
         .then((res) => sendResponse({ success: true, solutions: res }))
@@ -147,7 +148,6 @@ if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage)
       return true;
     }
 
-    // 7. Get Config
     if (request.action === 'GET_CONFIG') {
       chrome.storage.local.get(null).then((config) => {
         sendResponse({ success: true, config: { ...DEFAULT_CONFIG, ...config } });
