@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "SWAYAM Solver",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Automated helper for SWAYAM and NPTEL multiple choice assignments.",
   "permissions": [
     "storage",

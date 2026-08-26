@@ -1,12 +1,12 @@
 {
   "name": "@zibranxo/swayam-solver",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Automated helper for SWAYAM and NPTEL multiple choice assignments.",
   "main": "background/background.js",
   "scripts": {
     "test": "node test/unit_tests.js && node test/dom_e2e_test.js",
     "lint": "node -c background/background.js content/content.js popup/popup.js test/unit_tests.js test/dom_e2e_test.js",
-    "build:zip": "node -e \"const fs = require('fs'); const cp = require('child_process'); try { fs.unlinkSync('swayam-solver.zip'); } catch(e){} cp.execSync('tar -a -c -f swayam-solver.zip manifest.json package.json background content popup icons'); console.log('Bundle created: swayam-solver.zip');\""
+    "build:zip": "node -e \"const fs = require('fs'); const cp = require('child_process'); try { fs.unlinkSync('swayam-solver-v2.1.0.zip'); } catch(e){} cp.execSync('tar -a -c -f swayam-solver-v2.1.0.zip manifest.json package.json background content popup icons README.md'); console.log('Bundle created: swayam-solver-v2.1.0.zip');\""
   },
   "repository": {
     "type": "git",
@@ -20,7 +20,8 @@
     "background",
     "content",
     "popup",
-    "icons"
+    "icons",
+    "README.md"
   ],
   "keywords": [
     "swayam",
